@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+# Created by the mod beside the DLL; holds the API key.
+SpireLink.cfg
+SpireLink.next_run.cfg

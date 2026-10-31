@@ -1,0 +1,69 @@
+{
+  "source": {
+    "game_version": "0.107.1",
+    "bridge_version": "0.2.0",
+    "build_sha256": "875d120125430362e024e56b03a78f5ed525252976112a3b2a6623242b1c7fb7",
+    "before_version": 2,
+    "after_version": 6
+  },
+  "action": {
+    "action": "menu_select",
+    "arguments": {
+      "option": "continue"
+    }
+  },
+  "before": {
+    "state_type": "menu",
+    "menu_screen": "main",
+    "options": [
+      "continue",
+      "abandon_run",
+      "multiplayer",
+      "compendium",
+      "timeline",
+      "settings",
+      "quit"
+    ],
+    "context": {
+      "run_id": null,
+      "combat_epoch": null
+    }
+  },
+  "after": {
+    "state_type": "rewards",
+    "rewards": {
+      "items": [
+        {
+          "index": 0,
+          "type": "gold",
+          "description": "12金币",
+          "gold_amount": 12
+        },
+        {
+          "index": 1,
+          "type": "potion",
+          "description": "赌徒特酿",
+          "potion_id": "GAMBLERS_BREW",
+          "potion_name": "赌徒特酿",
+          "potion_description": "丢弃任意张牌，然后抽相同数量的牌。"
+        },
+        {
+          "index": 2,
+          "type": "card",
+          "description": "将一张牌添加到你的牌组。"
+        }
+      ],
+      "can_proceed": true
+    },
+    "run": {
+      "act": 1,
+      "floor": 7,
+      "ascension": 10,
+      "seed": "JGAA2FTF8L"
+    },
+    "context": {
+      "run_id": "b37e091111af42d19afb2a6fdf5abdbb",
+      "combat_epoch": null
+    }
+  }
+}

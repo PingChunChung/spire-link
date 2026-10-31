@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="fixtures/neow-proceed.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/resume-rewards.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/lane05-sequential-discard.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/hand-trick-repeat.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/prepared-sly-discard.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/next-round-discard.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="fixtures/slippery-bridge-loop.json" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Include="PostconditionTests.cs" />
+    <Compile Include="../src/BridgeProtocol.cs" Link="BridgeProtocol.cs" />
+    <Compile Include="../src/BridgePostconditions.cs" Link="BridgePostconditions.cs" />
+  </ItemGroup>
+</Project>

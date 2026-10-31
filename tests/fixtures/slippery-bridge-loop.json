@@ -1,0 +1,43 @@
+{
+  "source": {
+    "before_path": "test-results/jev-until-victory-20261023/lane02/game09/run/states/7cb2388ba7a54c9696ef337f03a8c54c-00380.json",
+    "before_sha256": "0d8b3d9e028213d4ea8376035bf1327f213ef43bf912b422caeca941f1396643",
+    "after_path": "test-results/jev-until-victory-20261023/lane02/game09/blocked-event-01-evidence.json",
+    "after_sha256": "cf5889faaf939256419ad20cf97ce89b917699e5b3d8190341549459d5cc7f10",
+    "request_id": "runner-7cb2388ba7a54c9696ef337f03a8c54c-00191",
+    "public_after_ready": false,
+    "public_after_actions": 0
+  },
+  "before_version": 794,
+  "after_version": 796,
+  "before": {
+    "state_type": "event",
+    "context": {"session_id": "37f3402cf91744be92512109df1e7af4", "run_id": "f088f3079f0a4552976e1b628e67a3c2"},
+    "run": {"act": 1, "floor": 11, "seed": "SC4N6WZ20C"},
+    "engine": {"action_queue_idle": true},
+    "player": {"hp": 57},
+    "event": {
+      "event_id": "SLIPPERY_BRIDGE", "is_ancient": false, "in_dialogue": false,
+      "body": "While crossing a rickety wooden bridge, there is a sudden torrent of rain. Massive gusts of wind buffet you, threatening to end your journey.",
+      "options": [
+        {"index": 0, "title": "Overcome", "description": "Flick-Flack is removed from your Deck.", "is_locked": false, "actionable": true, "is_proceed": false, "was_chosen": false, "keywords": [{"name": "Flick-Flack"}]},
+        {"index": 1, "title": "Hold On", "description": "Lose 3 HP. The card in the above option is randomized.", "is_locked": false, "actionable": true, "is_proceed": false, "was_chosen": false}
+      ]
+    }
+  },
+  "after": {
+    "state_type": "event",
+    "context": {"session_id": "37f3402cf91744be92512109df1e7af4", "run_id": "f088f3079f0a4552976e1b628e67a3c2"},
+    "run": {"act": 1, "floor": 11, "seed": "SC4N6WZ20C"},
+    "engine": {"action_queue_idle": true},
+    "player": {"hp": 54},
+    "event": {
+      "event_id": "SLIPPERY_BRIDGE", "is_ancient": false, "in_dialogue": false,
+      "body": "You're holding on!",
+      "options": [
+        {"index": 0, "title": "Overcome", "description": "Strike is removed from your Deck.", "is_locked": false, "actionable": true, "is_proceed": false, "was_chosen": false, "keywords": [{"name": "Strike"}]},
+        {"index": 1, "title": "Hold On", "description": "Lose 4 HP. The card in the above option is randomized.", "is_locked": false, "actionable": true, "is_proceed": false, "was_chosen": false}
+      ]
+    }
+  }
+}

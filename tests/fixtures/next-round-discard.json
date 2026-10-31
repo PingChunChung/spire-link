@@ -1,0 +1,212 @@
+{
+  "before": {
+    "state_type": "elite",
+    "context": {
+      "session_id": "46334219193a43d485d93f1ccb52a814",
+      "run_id": "5e4c3715e8544338b139c310515d99fc",
+      "combat_epoch": "b2c1e0b9dbc34f0498981208a60bd5e2"
+    },
+    "run": {
+      "act": 1,
+      "floor": 7,
+      "ascension": 10,
+      "seed": "V7NGZEWY24"
+    },
+    "battle": {
+      "round": 1,
+      "turn": "player",
+      "is_play_phase": true,
+      "can_end_turn": true,
+      "actions_disabled": false
+    },
+    "engine": {
+      "action_queue_idle": true
+    },
+    "player": {
+      "hand": [
+        {
+          "index": 0,
+          "id": "STRIKE_SILENT",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-2e3c6ad53f064905bae773a2a270beb8"
+        },
+        {
+          "index": 1,
+          "id": "DEFEND_SILENT",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-9949a6d483394ef98a289e86b09f4b5a"
+        },
+        {
+          "index": 2,
+          "id": "STRIKE_SILENT",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-3a06e091696a4d969b6cdfa8a139ff85"
+        },
+        {
+          "index": 3,
+          "id": "DEFEND_SILENT",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-8545e8b4fdd249cd9ad2fbd8da013aec"
+        },
+        {
+          "index": 4,
+          "id": "SPEEDSTER",
+          "type": "Power",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-cd8e0d3119c3483299e6459c5794f55b"
+        },
+        {
+          "index": 5,
+          "id": "STRIKE_SILENT",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-d7774f5a704242c8b20c6a5144b34a93"
+        }
+      ]
+    }
+  },
+  "after": {
+    "state_type": "hand_select",
+    "context": {
+      "session_id": "46334219193a43d485d93f1ccb52a814",
+      "run_id": "5e4c3715e8544338b139c310515d99fc",
+      "combat_epoch": "b2c1e0b9dbc34f0498981208a60bd5e2"
+    },
+    "run": {
+      "act": 1,
+      "floor": 7,
+      "ascension": 10,
+      "seed": "V7NGZEWY24"
+    },
+    "battle": {
+      "round": 2,
+      "turn": "player",
+      "is_play_phase": false,
+      "can_end_turn": false,
+      "actions_disabled": true
+    },
+    "engine": {
+      "action_queue_idle": false
+    },
+    "player": {
+      "hand": [
+        {
+          "index": 0,
+          "id": "SUCKER_PUNCH",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-0619f58347e54421a311132d71dd6227"
+        },
+        {
+          "index": 1,
+          "id": "STRIKE_SILENT",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-62ce0f49d8b5488a8a5754bc7376004e"
+        },
+        {
+          "index": 2,
+          "id": "SNAKEBITE",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-311259743d534e4499e5c51ba061dc9e"
+        },
+        {
+          "index": 3,
+          "id": "DEFEND_SILENT",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-138dad21e8de4d1b9e85e43c2bdac709"
+        },
+        {
+          "index": 4,
+          "id": "SURVIVOR",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-28bad94ab98c4dfbb79b3a28da3b5ae2"
+        },
+        {
+          "index": 5,
+          "id": "ASCENDERS_BANE",
+          "type": "Curse",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-2c3b17e58ac240538f397ce422b0b6bb"
+        }
+      ]
+    },
+    "hand_select": {
+      "mode": "simple_select",
+      "can_confirm": false,
+      "cards": [
+        {
+          "index": 0,
+          "id": "SUCKER_PUNCH",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-0619f58347e54421a311132d71dd6227",
+          "selected": false,
+          "actionable": true
+        },
+        {
+          "index": 1,
+          "id": "STRIKE_SILENT",
+          "type": "Attack",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-62ce0f49d8b5488a8a5754bc7376004e",
+          "selected": false,
+          "actionable": true
+        },
+        {
+          "index": 2,
+          "id": "SNAKEBITE",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-311259743d534e4499e5c51ba061dc9e",
+          "selected": false,
+          "actionable": true
+        },
+        {
+          "index": 3,
+          "id": "DEFEND_SILENT",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-138dad21e8de4d1b9e85e43c2bdac709",
+          "selected": false,
+          "actionable": true
+        },
+        {
+          "index": 4,
+          "id": "SURVIVOR",
+          "type": "Skill",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-28bad94ab98c4dfbb79b3a28da3b5ae2",
+          "selected": false,
+          "actionable": true
+        },
+        {
+          "index": 5,
+          "id": "ASCENDERS_BANE",
+          "type": "Curse",
+          "is_upgraded": false,
+          "instance_id": "b2c1e0b9dbc34f0498981208a60bd5e2:card-2c3b17e58ac240538f397ce422b0b6bb",
+          "selected": false,
+          "actionable": true
+        }
+      ],
+      "selector": {
+        "invocation_id": "46334219193a43d485d93f1ccb52a814:selection-1ed59a431b7a4f609eb364a63e543a99",
+        "prompt_table": "card_selection",
+        "prompt_key": "TO_DISCARD",
+        "min_select": 1,
+        "max_select": 1,
+        "require_manual_confirmation": false,
+        "cancelable": false,
+        "filter_target_model_id": null
+      }
+    }
+  }
+}

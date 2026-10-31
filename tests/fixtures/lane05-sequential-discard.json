@@ -1,0 +1,398 @@
+{
+  "source_paths": [
+    "test-results/jev-until-victory-20261023/lane05/game02/run/contexts/3e3d4ab5b3f44dd496bcfdca632421c7-00234.json",
+    "test-results/jev-until-victory-20261023/lane05/game02/root-check-1156.json"
+  ],
+  "source_state_versions": [
+    1058,
+    1062
+  ],
+  "before": {
+    "state_type": "hand_select",
+    "context": {
+      "run_id": "45847cbbfb864f3ead8e3dc2e93499fe",
+      "combat_epoch": "d712f91019db431a9e5010fc5fc9aba7"
+    },
+    "run": {
+      "seed": "587ELLTQ64",
+      "act": 1,
+      "floor": 17
+    },
+    "battle": {
+      "round": 6,
+      "turn": "player"
+    },
+    "hand_select": {
+      "mode": "simple_select",
+      "can_confirm": true,
+      "selector": {
+        "prompt_table": "card_selection",
+        "prompt_key": "TO_DISCARD",
+        "min_select": 1,
+        "max_select": 1,
+        "require_manual_confirmation": false,
+        "cancelable": false,
+        "filter_target_model_id": null
+      },
+      "cards": [
+        {
+          "index": 0,
+          "id": "SNAKEBITE",
+          "name": "Snakebite",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-7"
+        },
+        {
+          "index": 1,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-1"
+        },
+        {
+          "index": 2,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-19"
+        },
+        {
+          "index": 3,
+          "id": "STRIKE_SILENT",
+          "name": "Strike",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-18"
+        }
+      ],
+      "selected_cards": [
+        {
+          "index": 0,
+          "selected": true,
+          "actionable": false,
+          "name": "Predator",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-11"
+        }
+      ],
+      "selected_instances": [
+        "d712f91019db431a9e5010fc5fc9aba7:card-11"
+      ]
+    },
+    "player": {
+      "hand": [
+        {
+          "index": 0,
+          "id": "SNAKEBITE",
+          "name": "Snakebite",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-7"
+        },
+        {
+          "index": 1,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-1"
+        },
+        {
+          "index": 2,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-19"
+        },
+        {
+          "index": 3,
+          "id": "STRIKE_SILENT",
+          "name": "Strike",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-18"
+        },
+        {
+          "index": 4,
+          "id": "PREDATOR",
+          "name": "Predator",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-11"
+        }
+      ],
+      "discard_pile_count": 8,
+      "discard_pile": [
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Haze",
+          "cost": "3",
+          "star_cost": null,
+          "description": "Sly. Apply 4 Poison to ALL enemies."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Dagger Throw",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 9 damage. Draw 1 card. Discard 1 card."
+        },
+        {
+          "name": "Dagger Spray",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 4 damage to ALL enemies twice."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Blade Dance",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Add 3 Shivs into your Hand. Exhaust."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        }
+      ],
+      "draw_pile": [
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Neutralize",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Deal 3 damage. Apply 1 Weak."
+        },
+        {
+          "name": "Slice",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        }
+      ],
+      "exhaust_pile": [
+        {
+          "name": "Ascender's Bane",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Unplayable. Ethereal. Eternal."
+        }
+      ]
+    }
+  },
+  "after": {
+    "state_type": "hand_select",
+    "context": {
+      "run_id": "45847cbbfb864f3ead8e3dc2e93499fe",
+      "combat_epoch": "d712f91019db431a9e5010fc5fc9aba7"
+    },
+    "run": {
+      "seed": "587ELLTQ64",
+      "act": 1,
+      "floor": 17
+    },
+    "battle": {
+      "round": 6,
+      "turn": "player"
+    },
+    "hand_select": {
+      "mode": "simple_select",
+      "can_confirm": false,
+      "selector": {
+        "prompt_table": "card_selection",
+        "prompt_key": "TO_DISCARD",
+        "min_select": 1,
+        "max_select": 1,
+        "require_manual_confirmation": false,
+        "cancelable": false,
+        "filter_target_model_id": null
+      },
+      "cards": [
+        {
+          "index": 0,
+          "id": "SNAKEBITE",
+          "name": "Snakebite",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-7"
+        },
+        {
+          "index": 1,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-1"
+        },
+        {
+          "index": 2,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-19"
+        },
+        {
+          "index": 3,
+          "id": "STRIKE_SILENT",
+          "name": "Strike",
+          "selected": false,
+          "actionable": true,
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-18"
+        }
+      ]
+    },
+    "player": {
+      "hand": [
+        {
+          "index": 0,
+          "id": "SNAKEBITE",
+          "name": "Snakebite",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-7"
+        },
+        {
+          "index": 1,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-1"
+        },
+        {
+          "index": 2,
+          "id": "DEFEND_SILENT",
+          "name": "Defend",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-19"
+        },
+        {
+          "index": 3,
+          "id": "STRIKE_SILENT",
+          "name": "Strike",
+          "instance_id": "d712f91019db431a9e5010fc5fc9aba7:card-18"
+        }
+      ],
+      "discard_pile_count": 9,
+      "discard_pile": [
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Haze",
+          "cost": "3",
+          "star_cost": null,
+          "description": "Sly. Apply 4 Poison to ALL enemies."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Dagger Throw",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 9 damage. Draw 1 card. Discard 1 card."
+        },
+        {
+          "name": "Dagger Spray",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 4 damage to ALL enemies twice."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Blade Dance",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Add 3 Shivs into your Hand. Exhaust."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Predator",
+          "cost": "2",
+          "star_cost": null,
+          "description": "Deal 15 damage. Next turn, draw 2 cards."
+        }
+      ],
+      "draw_pile": [
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Defend",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Gain 5 Block."
+        },
+        {
+          "name": "Neutralize",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Deal 3 damage. Apply 1 Weak."
+        },
+        {
+          "name": "Slice",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        },
+        {
+          "name": "Strike",
+          "cost": "1",
+          "star_cost": null,
+          "description": "Deal 6 damage."
+        }
+      ],
+      "exhaust_pile": [
+        {
+          "name": "Ascender's Bane",
+          "cost": "0",
+          "star_cost": null,
+          "description": "Unplayable. Ethereal. Eternal."
+        }
+      ]
+    }
+  }
+}
