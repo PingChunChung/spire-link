@@ -190,6 +190,15 @@ static class Tests
             "tutorial prompt choices must be exposed");
         Check(Actions("""{"state_type":"menu","menu_screen":"popup","options":[{"name":"Cancel","enabled":true},{"name":"Delete Profile","enabled":true}]}""").Count == 1,
             "destructive popup options must not be exposed");
+        // A vertical popup's yes/no buttons: a caption the list knows keeps its caption-derived option (older recordings use
+        // it); a caption in another language gets the button's role as its option and the caption as its label.
+        var known = Actions("""{"state_type":"menu","menu_screen":"popup","options":[{"name":"好的","enabled":true,"role":"yes"},{"name":"不了","enabled":true,"role":"no"}]}""");
+        Check(known.Select(x => (string)x.Arguments["option"]!).SequenceEqual(new[] { "好的", "不了" }), "known captions keep their option ids");
+        var foreign = Actions("""{"state_type":"menu","menu_screen":"popup","options":[{"name":"はい","enabled":true,"role":"yes"},{"name":"いいえ","enabled":false,"role":"no"},{"name":"削除","enabled":true}]}""");
+        Check(foreign.Count == 1 && (string)foreign[0].Arguments["option"]! == "yes" && foreign[0].Label == "はい",
+            "an unknown-language yes button is exposed by its role, a disabled one and a roleless unknown caption are not");
+        Check(Actions("""{"state_type":"menu","menu_screen":"main","options":[{"name":"はい","enabled":true,"role":"yes"}]}""").Count == 0,
+            "roles only apply to popups");
         Check(Actions("""{"state_type":"crystal_sphere","crystal_sphere":{"can_use_big_tool":true,"can_use_small_tool":false,"clickable_cells":[{"x":1,"y":2}],"can_proceed":true}}""")
             .Select(x => x.Action).SequenceEqual(new[] { "crystal_sphere_set_tool", "crystal_sphere_click_cell", "crystal_sphere_proceed" }),
             "crystal sphere controls must follow visible guards");

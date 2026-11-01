@@ -155,8 +155,12 @@ public static class ActionPostconditions
                     String(newSelection, "screen_type") is { Length: > 0 } newScreen && oldScreen != newScreen &&
                     String(Part(b, "context"), "run_id") is { Length: > 0 } selectRun &&
                     selectRun == String(Part(a, "context"), "run_id")) return true;
+                // A click on a card toggles it: a selected card becomes unselected (the screen allows unpicking while it
+                // still accepts picks), so both directions are the evidence that the click landed.
                 return newType == "card_select" &&
                        ((!True(oldSelect, "selected") && True(newSelect, "selected")) ||
+                        (True(oldSelect, "selected") && Present(newSelect) && Get(newSelect, "selected").ValueKind == JsonValueKind.False &&
+                         SameIdentity(oldSelect, newSelect)) ||
                         (!True(oldSelection, "preview_showing") && True(newSelection, "preview_showing") &&
                          Items(newSelection, "preview_cards").Any(preview => SameIdentity(oldSelect, preview))));
             case "confirm_selection": return Left("card_select");
@@ -305,23 +309,40 @@ public static class ActionPostconditions
 
         // HoldOn damages for CurrentHpLoss, increments the loop count and the
         // next displayed loss, then rerolls. The reroll and LOOP body may repeat.
-        var oldText = String(oldHold, "description");
-        var newText = String(newHold, "description");
-        if (oldText == null || newText == null) return false;
+        // The cost comes from the event model's HpLoss variable and the option's localization key (language independent);
+        // the option's displayed sentence is only the fallback for a state that carries neither.
+        if (SlipperyBridgeCost(oldEvent, oldHold) is not int cost || cost < 1 || cost == int.MaxValue ||
+            SlipperyBridgeCost(newEvent, newHold) is not int nextCost || nextCost != cost + 1) return false;
+        if (String(oldHold, "text_key") is { Length: > 0 } oldKey && String(newHold, "text_key") is { Length: > 0 } newKey &&
+            (!SlipperyBridgeHoldOnKey(oldKey) || !SlipperyBridgeHoldOnKey(newKey) || oldKey == newKey)) return false;
+        return Number(Part(b, "player"), "hp") is int oldHp && oldHp >= cost && Number(Part(a, "player"), "hp") == oldHp - cost;
+    }
+
+    // "SLIPPERY_BRIDGE.pages.<page>.options.HOLD_ON_<n or LOOP>": each Hold On gets the key of its page; LOOP repeats from 7 on.
+    private static bool SlipperyBridgeHoldOnKey(string key) =>
+        key.StartsWith("SLIPPERY_BRIDGE.pages.", StringComparison.Ordinal) && key.Contains(".options.HOLD_ON_", StringComparison.Ordinal);
+
+    private static int? SlipperyBridgeCost(JsonElement eventState, JsonElement hold)
+    {
+        var vars = Part(eventState, "dynamic_vars");
+        if (vars.ValueKind == JsonValueKind.Object)
+        {
+            if (Number(vars, "HpLoss") is int loss) return loss;
+            return null; // structured data present but without the cost: never fall back to text in that case
+        }
+        var text = String(hold, "description");
+        if (text == null) return null;
         var templates = new[]
         {
             @"\ALose (?<cost>[1-9][0-9]*) HP\. The card in the above option is randomized\.\z",
             @"\A失去(?<cost>[1-9][0-9]*)点生命。重新随机上方选项中的卡牌。\z"
         };
-        var matches = templates.Select(pattern => (Old: Regex.Match(oldText, pattern, RegexOptions.CultureInvariant),
-            New: Regex.Match(newText, pattern, RegexOptions.CultureInvariant)))
-            .FirstOrDefault(pair => pair.Old.Success && pair.New.Success);
-        if (matches.Old == null || !matches.Old.Success ||
-            !int.TryParse(matches.Old.Groups["cost"].Value, out var cost) || cost == int.MaxValue ||
-            !int.TryParse(matches.New.Groups["cost"].Value, out var nextCost) || nextCost != cost + 1 ||
-            Number(Part(b, "player"), "hp") is not int oldHp || oldHp < cost ||
-            Number(Part(a, "player"), "hp") != oldHp - cost) return false;
-        return true;
+        foreach (var pattern in templates)
+        {
+            var match = Regex.Match(text, pattern, RegexOptions.CultureInvariant);
+            if (match.Success && int.TryParse(match.Groups["cost"].Value, out var cost)) return cost;
+        }
+        return null;
     }
     private static bool NextRoundSelectorContinuation(AgentSnapshot before, AgentSnapshot after)
     {

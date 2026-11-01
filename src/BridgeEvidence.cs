@@ -30,12 +30,22 @@ public sealed class EvidenceJournal : IDisposable
     private readonly Task _writerTask;
     private string? _lastError;
     private long _sequence;
+    private long _dropped;
     private int _disposed;
 
-    public EvidenceJournal(string rootDirectory, string sessionId)
+    // The writer queue is bounded: when the disk cannot keep up, new events and states are dropped and counted instead of
+    // piling up in memory. Writes never block the game thread.
+    public const int DefaultQueueCapacity = 4096;
+
+    public EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity = DefaultQueueCapacity)
+        : this(rootDirectory, sessionId, queueCapacity, startWriter: true) { }
+
+    // startWriter false leaves the queue unread (tests of the bound); nothing is ever written then.
+    internal EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity, bool startWriter)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        if (queueCapacity < 1) throw new ArgumentOutOfRangeException(nameof(queueCapacity));
 
         _sessionId = sessionId;
         var root = Path.GetFullPath(rootDirectory);
@@ -44,18 +54,53 @@ public sealed class EvidenceJournal : IDisposable
         _eventsPath = Path.Combine(SessionDirectory, "events.jsonl");
         _statesDirectory = Path.Combine(SessionDirectory, "states");
 
-        _commands = Channel.CreateUnbounded<JournalCommand>(new UnboundedChannelOptions
+        _commands = Channel.CreateBounded<JournalCommand>(new BoundedChannelOptions(queueCapacity)
         {
             SingleReader = true,
             SingleWriter = false,
-            AllowSynchronousContinuations = false
+            AllowSynchronousContinuations = false,
+            FullMode = BoundedChannelFullMode.Wait // TryWrite returns false when full; nothing ever waits
         });
-        _writerTask = Task.Run(WriterLoopAsync);
+        _writerTask = startWriter ? Task.Run(WriterLoopAsync) : Task.CompletedTask;
     }
 
     public string SessionDirectory { get; }
 
     public string? LastError => Volatile.Read(ref _lastError);
+
+    /// <summary>Events and states that were not queued because the writer queue was full.</summary>
+    public long Dropped => Interlocked.Read(ref _dropped);
+
+    /// <summary>
+    /// Deletes the oldest session folders under <paramref name="rootDirectory"/>/sessions so that at most <paramref name="keep"/>
+    /// remain (by last write time; the current session is never counted or deleted). Only folders named like a session folder
+    /// are touched. Returns the names of the deleted folders. <paramref name="keep"/> of 0 or less keeps everything.
+    /// </summary>
+    public static IReadOnlyList<string> PruneSessions(string rootDirectory, int keep, string? currentSessionDirectory = null)
+    {
+        var deleted = new List<string>();
+        if (keep <= 0) return deleted;
+        var sessions = Path.Combine(Path.GetFullPath(rootDirectory), "sessions");
+        if (!Directory.Exists(sessions)) return deleted;
+        var current = currentSessionDirectory == null ? null : Path.GetFullPath(currentSessionDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        var candidates = new DirectoryInfo(sessions).GetDirectories()
+            .Where(d => IsSessionDirectoryName(d.Name) && !string.Equals(d.FullName.TrimEnd(Path.DirectorySeparatorChar), current, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(d => d.LastWriteTimeUtc).ToList();
+        foreach (var old in candidates.Skip(keep))
+        {
+            try { old.Delete(recursive: true); deleted.Add(old.Name); }
+            catch (Exception) { /* a folder in use stays; the next launch tries again */ }
+        }
+        return deleted;
+    }
+
+    // "<prefix>-<12 hex>" as CreateSessionDirectoryName produces it.
+    private static bool IsSessionDirectoryName(string name)
+    {
+        int dash = name.LastIndexOf('-');
+        if (dash < 1 || name.Length - dash - 1 != 12) return false;
+        return name[(dash + 1)..].All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
+    }
 
     public void Record(string eventType, object payload)
     {
@@ -90,7 +135,8 @@ public sealed class EvidenceJournal : IDisposable
 
                     if (!_commands.Writer.TryWrite(new EventCommand(envelope)))
                     {
-                        enqueueError = $"Evidence event '{eventType}' (seq {sequence}) could not be queued.";
+                        Interlocked.Increment(ref _dropped);
+                        enqueueError = $"Evidence event '{eventType}' (seq {sequence}) was dropped: {QueueState()} ({Dropped} dropped so far).";
                     }
                 }
             }
@@ -131,7 +177,8 @@ public sealed class EvidenceJournal : IDisposable
             if (!_commands.Writer.TryWrite(new StateCommand(version, stateHash, stateCopy)))
             {
                 _stateVersions.TryRemove(version, out _);
-                ReportError($"State version {version} could not be queued.");
+                Interlocked.Increment(ref _dropped);
+                ReportError($"State version {version} was dropped: {QueueState()} ({Dropped} dropped so far).");
             }
         }
         catch (Exception exception)
@@ -270,6 +317,8 @@ public sealed class EvidenceJournal : IDisposable
             }
         }
     }
+
+    private string QueueState() => _commands.Reader.Completion.IsCompleted ? "the writer has stopped" : "the writer queue is full";
 
     private void ReportError(string message)
     {

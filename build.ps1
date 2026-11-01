@@ -37,8 +37,19 @@ if ($Workshop) {
     if (Test-Path -LiteralPath $contentDir) { Remove-Item -LiteralPath $contentDir -Recurse -Force }
     New-Item -ItemType Directory -Path $contentDir -Force | Out-Null
     Copy-Item -Path (Join-Path $packageDir '*') -Destination $contentDir
-    $missing = @('image.png') | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "workshop/$_")) }
-    if ($missing) { Write-Warning "Workshop workspace is missing: $($missing -join ', '). ModUploader requires image.png (< 1 MB)." }
+    # ModUploader refuses a workspace without a cover image, and the image must stay under 1 MB; stop here rather than hand
+    # over a workspace that looks ready.
+    $image = Join-Path $PSScriptRoot 'workshop/image.png'
+    if (-not (Test-Path -LiteralPath $image)) { throw "workshop/image.png is missing. ModUploader requires a PNG cover image under 1 MB (see workshop/README.md)." }
+    $imageSize = (Get-Item -LiteralPath $image).Length
+    if ($imageSize -ge 1MB) { throw "workshop/image.png is $imageSize bytes; ModUploader requires it to be under 1 MB." }
+    foreach ($preview in Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'workshop/previews') -File -ErrorAction SilentlyContinue) {
+        if ($preview.Length -ge 1MB) { throw "workshop/previews/$($preview.Name) is $($preview.Length) bytes; each preview must be under 1 MB." }
+    }
+    # The shipped DLL must not contain the build machine's paths.
+    $dllBytes = [IO.File]::ReadAllBytes((Join-Path $contentDir 'SpireLink.dll'))
+    $dllText = [Text.Encoding]::ASCII.GetString($dllBytes)
+    if ($dllText -match [regex]::Escape($PSScriptRoot) -or $dllText -match 'C:\\Users\\') { throw 'SpireLink.dll contains a local path; check PathMap/DebugType in SpireLink.csproj.' }
     Write-Output "Workshop content: $contentDir"
 }
 if ($Install) {

@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Events;
+using MegaCrit.Sts2.Core.Localization.DynamicVars;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
@@ -10,8 +11,8 @@ using SpireLink.Game;
 namespace SpireLink.State.Screens;
 
 // Group B. The "event" field.
-// Contract (Read): {event_id, event_name, is_ancient, in_dialogue, body, options: [{index, title, description, is_locked,
-// actionable, is_proceed, was_chosen, relic_name?, relic_description?, keywords}]}. Options come from the NEventOptionButtons
+// Contract (Read): {event_id, event_name, is_ancient, in_dialogue, body, dynamic_vars: {name: number|string}, options: [{index,
+// title, description, text_key, is_locked, actionable, is_proceed, was_chosen, relic_name?, relic_description?, keywords}]}. Options come from the NEventOptionButtons
 // of NEventRoom.Instance; a combat-layout event (no NEventRoom) lists the model's CurrentOptions with source: "model".
 // Contract (Minimal, when Read throws): {fallback_reason, event_id, is_ancient: false, in_dialogue: false, options: [{index,
 // title, description, is_locked, is_proceed, was_chosen, actionable}]} read straight from the buttons.
@@ -30,8 +31,30 @@ internal static class EventScreen
             ["is_ancient"] = ancient,
             ["in_dialogue"] = inDialogue,
             ["body"] = Text.Of(() => model.Description),
+            ["dynamic_vars"] = DynamicVars(model),
             ["options"] = ui != null ? ButtonOptions(ui, inDialogue) : ModelOptions(model)
         };
+    }
+
+    // The model's dynamic variables by name (the numbers and names its text is built from: HpLoss, Gold, a card title),
+    // so a client or a postcondition can read a cost without parsing the translated sentence. Integral values are integers.
+    private static Dictionary<string, object?> DynamicVars(EventModel model)
+    {
+        var vars = new Dictionary<string, object?>();
+        try
+        {
+            foreach (var (name, variable) in model.DynamicVars)
+            {
+                if (variable is StringVar text) vars[name] = text.StringValue;
+                else
+                {
+                    var value = variable.BaseValue;
+                    vars[name] = value == decimal.Truncate(value) && value >= long.MinValue && value <= long.MaxValue ? (long)value : (double)value;
+                }
+            }
+        }
+        catch { /* a variable whose value cannot be read is left out */ }
+        return vars;
     }
 
     // The clickable dialogue hitbox while the ancient is still talking (the option buttons wait behind it), else null.
@@ -81,6 +104,8 @@ internal static class EventScreen
         ["index"] = index,
         ["title"] = Text.Of(() => option.Title),
         ["description"] = Text.Of(() => option.Description),
+        // The localization key of the option ("SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_0"): the same in every language.
+        ["text_key"] = Text.Of(() => option.TextKey),
         ["is_locked"] = option.IsLocked,
         ["actionable"] = actionable,
         ["is_proceed"] = option.IsProceed,

@@ -170,8 +170,11 @@ public static class AgentProtocol
                 foreach (var item in Array(state, "options"))
                 {
                     var name = item.ValueKind == JsonValueKind.String ? item.GetString() : String(item, "name");
-                    if (name == null || !allowedNames.Contains(name.ToLowerInvariant()) || !Enabled(item)) continue;
-                    Add("menu_select", name, ("option", name));
+                    if (name == null || !Enabled(item)) continue;
+                    if (allowedNames.Contains(name.ToLowerInvariant())) { Add("menu_select", name, ("option", name)); continue; }
+                    // A popup's yes/no button whose caption is in a language the list above does not know: its option is the
+                    // button's role, which the game sets independently of the language; the caption stays in the label.
+                    if (screen == "popup" && String(item, "role") is "yes" or "no") Add("menu_select", name, ("option", String(item, "role")));
                 }
                 if (screen == "character_select")
                 {

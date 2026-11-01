@@ -2,7 +2,7 @@
 
 Spire Link is a local mod for Slay the Spire 2. It runs an HTTP API inside the game that listens only on `127.0.0.1`, so external programs can read the current game state and send actions such as playing a card, choosing a path, claiming rewards or driving menus. The mod makes no decisions itself; use it to connect your own helper tools, run logging or an AI.
 
-The current version is 0.3.0, tested on game v0.107.1, singleplayer only. On other game versions the mod still loads and `GET /health` reports `"compatibility": "untested_game_version"`. This version was verified by replaying a complete Ascension 10 win (1110 steps, through both final bosses) in the real game: every step executed as recorded, and the final floor and HP matched the original run.
+The current version is 0.3.0, verified only on game v0.107.1, singleplayer only. On another game version the mod may fail to load or to read some screens; if it starts, `GET /health` reports `"compatibility": "untested_game_version"`. The maintainer's verification record for this version: a complete Ascension 10 win recorded through this API (1110 actions, through both final bosses) was replayed in the real game on v0.107.1 with the maintainer's replay tool, every action executed as recorded, and the final floor and HP matched the original run. The recording and the tool are not part of this repository.
 
 ## Install (players)
 
@@ -18,7 +18,7 @@ On first launch the mod creates `%LOCALAPPDATA%\SpireLink\SpireLink.cfg`. It is 
 
 ## Local data and privacy
 
-The mod writes only to `%LOCALAPPDATA%\SpireLink` and sends nothing over the network. With no program connected it records only that it started and stopped. Automatic screenshots (`auto_capture`) are off by default. What is written, and how to clear it, is in [docs/api.md](docs/api.md#local-data-and-automatic-capture). Security notes, including what to do if the API key leaks, are in [SECURITY.md](SECURITY.md).
+The mod writes only to `%LOCALAPPDATA%\SpireLink` and sends nothing over the network. With no program connected it still writes a small journal: that the mod started and stopped (with its version, port and the game version), whether its two Harmony patches were installed, when one of them triggers (with the id of the current event room), and when the game's main thread stops running frames for 10 seconds (with the room type and event id). It saves no game states and no screenshots unless a program is connected or `auto_capture` is on. Automatic screenshots (`auto_capture`) are off by default. What is written, how it grows and how to clear it, is in [docs/api.md](docs/api.md#local-data-and-automatic-capture); every setting is listed in [packaging/README.md](packaging/README.md#settings). Security notes, including what to do if the API key leaks, are in [SECURITY.md](SECURITY.md).
 
 ## API
 
@@ -37,7 +37,7 @@ Requires the .NET 9 SDK and an installed copy of the game. The mod compiles agai
 $env:STS2_GAME_DIR = "C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2"
 ./build.ps1            # build and produce the release zip in dist/
 ./build.ps1 -Install   # also install the DLL and manifest into the game's mods/SpireLink/ (the game must be closed)
-./build.ps1 -Workshop  # also fill workshop/content/ for the Steam Workshop uploader (see workshop/README.md)
+./build.ps1 -Workshop  # also fill workshop/content/ for the Steam Workshop uploader; fails without workshop/image.png (see workshop/README.md)
 ./test.ps1             # run every test project under tests/ in turn
 ```
 
@@ -49,7 +49,7 @@ The test projects are small console programs. They compile only the parts of `sr
 
 The mod applies only two Harmony patches to the game: one fixes a card grid that throws an exception every frame when scrolled at certain card counts, and the other skips, in fast mode, an event animation that would block the main thread.
 
-`build.ps1` stops if the version in `mod_manifest.json`, `SpireLink.csproj` and `SpireLinkMod.Version` differ. Release notes are in [CHANGELOG.md](CHANGELOG.md).
+`build.ps1` stops if the version in `mod_manifest.json`, `SpireLink.csproj` and `SpireLinkMod.Version` differ. The Release build maps source paths to `/_/` and embeds the PDB, so the shipped DLL carries no path from the build machine. Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

@@ -11,8 +11,8 @@ using MegaCrit.Sts2.Core.Settings;
 
 namespace SpireLink;
 
-// Punch Off hang (seed HUNTSSEED950, fleet lane 03): PunchOff.PunchEachOther loops without ever yielding when the bridge's non_interactive
-// switch (or Instant animations) turns every Cmd.Wait into a completed task. The journal named ENDLESS_CONVEYOR because the event
+// Punch Off hang: PunchOff.PunchEachOther loops without ever yielding when the bridge's non_interactive switch (or Instant
+// animations) turns every Cmd.Wait into a completed task. The journal named ENDLESS_CONVEYOR because the event
 // synchronizer still holds the previous event until BeginEvent (see Events.Ready). See BridgeStall.cs for the pure logic.
 public static partial class SpireLinkMod
 {

@@ -5,7 +5,7 @@ Spire Link lets programs on your computer read the game state and control the ga
 ## What the mod exposes
 
 - An HTTP server bound to `127.0.0.1` only (default port 15528). Other machines on your network cannot connect to it.
-- `GET /health` needs no authentication and returns only status and version information.
+- `GET /health` needs no authentication. It returns the mod version and build hash, the API session id, the current state version, the receipt count and capacity, the game version and compatibility, and two booleans saying whether an error is recorded. It never returns the error text (which can contain a local path), game state, the key or any file path; those are behind the key in `/v1/diagnostics` and `/v1/instance`.
 - Every other endpoint requires `Authorization: Bearer <api_key>`. The key is 64 random hexadecimal characters generated on first launch and stored in `%LOCALAPPDATA%\SpireLink\SpireLink.cfg`. Keys are compared in constant time.
 - The mod makes no outgoing network connections. Screenshots and the journal stay on your disk and are never sent anywhere by the mod.
 
@@ -23,4 +23,4 @@ Spire Link lets programs on your computer read the game state and control the ga
 
 ## Reporting a vulnerability
 
-Please open a GitHub issue that describes the problem without including a working exploit or your key, and ask for a private channel if the details are sensitive.
+Please use GitHub's private vulnerability reporting on this repository (Security tab, "Report a vulnerability"), which only the maintainer can read. If that form is not available to you, open a GitHub issue that describes the problem without a working exploit or your key, and ask for a private channel.

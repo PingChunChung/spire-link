@@ -68,7 +68,8 @@ public sealed class QueuedInvocation<T>
 public enum ReceiptAdd { Added, Exists, Full }
 
 /// <summary>
-/// Receipts by request id. When the store is full the oldest FINISHED receipts are evicted (down to 90 % of the capacity); a receipt whose request is still running is
+/// Receipts by request id. When the store is full the oldest RESOLVED receipts are evicted (down to 90 % of the capacity); the predicate decides what resolved
+/// means (the mod: the request finished with a final status, or its late settlement was observed). A receipt that is still running or still unresolved is
 /// never evicted, so "Full" means that nothing old enough could go. Re-sending the id of a receipt that is still stored answers with that same receipt (idempotency);
 /// an id that was evicted is unknown again, which is harmless because a request id older than the whole window cannot match the current state version anyway.
 /// Callers that need get-then-add as one step lock <see cref="Sync"/> (the lock is re-entrant).
@@ -120,6 +121,59 @@ public sealed class ReceiptStore<T> where T : class
     }
 }
 
+/// <summary>
+/// How a receipt's <c>status</c> maps to the HTTP layer and to the receipt store's retention. A receipt is unresolved while
+/// the game has not yet shown the action's effect (accepted, pending, unknown); the store never evicts an unresolved receipt,
+/// and both /v1/actions and /v1/requests answer it with 202.
+/// </summary>
+public static class ReceiptStatus
+{
+    public static bool IsUnresolved(string? status) => status is "accepted" or "pending" or "unknown";
+
+    public static int HttpStatus(string? status) => status switch
+    {
+        "rejected" => 409,
+        "accepted" or "pending" => 202,
+        _ => 200
+    };
+
+    public static string? Of(JsonElement receipt)
+        => receipt.ValueKind == JsonValueKind.Object && receipt.TryGetProperty("status", out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() : null;
+}
+
+/// <summary>Where the evidence journal may not live: inside the game's mods folder, inside the mod's own folder (a Workshop
+/// update replaces it) or anywhere under a Steam Workshop content folder, because the game reads every .json there as a mod manifest.</summary>
+public static class DataDirectoryPolicy
+{
+    public static string? Reject(string candidate, string? gameDirectory, string? modDirectory)
+    {
+        string full;
+        try { full = Path.GetFullPath(candidate); }
+        catch (Exception ex) { return "data_directory is not a valid path: " + ex.Message; }
+        if (!string.IsNullOrEmpty(gameDirectory) && Under(full, Path.Combine(gameDirectory, "mods")))
+            return "data_directory is inside the game's mods folder; the game would read the journal's .json files as mod manifests";
+        if (!string.IsNullOrEmpty(modDirectory) && Under(full, modDirectory))
+            return "data_directory is inside the mod's own folder; a Workshop update replaces that folder";
+        var parts = full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        for (int i = 0; i + 2 < parts.Length; i++)
+            if (parts[i].Equals("steamapps", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("workshop", StringComparison.OrdinalIgnoreCase)
+                && parts[i + 2].Equals("content", StringComparison.OrdinalIgnoreCase))
+                return "data_directory is inside a Steam Workshop content folder";
+        return null;
+    }
+
+    private static bool Under(string full, string root)
+    {
+        string normalizedRoot;
+        try { normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch { return false; }
+        if (full.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)) return true;
+        return full.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+            || full.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 /// <summary>Late settlement augments an immutable dispatch receipt without losing its original outcome.</summary>
 public sealed class ReceiptResolution
 {
@@ -127,6 +181,8 @@ public sealed class ReceiptResolution
     private long? _version;
     private string? _hash;
     private DateTimeOffset _at;
+
+    public bool Settled { get { lock (_gate) return _version.HasValue; } }
 
     public void MarkSettled(long version, string hash, DateTimeOffset at)
     {

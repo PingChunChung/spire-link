@@ -14,7 +14,7 @@ namespace SpireLink;
 [ModInitializer("Initialize")]
 public static partial class SpireLinkMod
 {
-    private static long _transformSeenAt = -100000;
+    private static long _transformSeenAt = long.MinValue;
     public const string Version = "0.3.0";
     public const string ModName = "SpireLink";
     // The config and the next_run spec live in %LOCALAPPDATA%\SpireLink, not beside the DLL: a Steam Workshop update may
@@ -45,7 +45,7 @@ public static partial class SpireLinkMod
     private static readonly SemaphoreSlim MutationGate = new(1, 1);
     private static readonly SemaphoreSlim CaptureGate = new(1, 1);
     private static readonly RunCaptureBudget CaptureBudget = new();
-    private static ReceiptStore<RequestEntry> Requests = new(16384, e => e.Work.IsCompleted);
+    private static ReceiptStore<RequestEntry> Requests = new(16384, e => e.Resolved);
     private static readonly ConcurrentDictionary<string, long> Counters = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<Dictionary<string, double>>> Metrics = new();
     private static readonly CancellationTokenSource Stopping = new();
@@ -92,6 +92,8 @@ public static partial class SpireLinkMod
         public string NonInteractive { get; set; } = "off";
         public string TraceFile { get; set; } = "";
         public int ReceiptCapacity { get; set; } = 16384;
+        // Session folders kept under data_directory/sessions; older ones are deleted at startup. 0 keeps everything.
+        public int MaxSessions { get; set; } = 0;
     }
 
     private sealed class RequestEntry(string fingerprint, Task<object> work)
@@ -100,6 +102,18 @@ public static partial class SpireLinkMod
         public Task<object> Work = work;
         public ReceiptResolution Resolution { get; } = new();
         public object Present(object result) => Resolution.Apply(result, _jsonOptions);
+        // The receipt store may evict this entry only once its outcome is final: the request finished with a final status, or
+        // its late settlement (accepted/pending/unknown turned into completed) was observed.
+        public bool Resolved
+        {
+            get
+            {
+                if (!Work.IsCompletedSuccessfully) return Work.IsCompleted;
+                if (Resolution.Settled) return true;
+                try { return !ReceiptStatus.IsUnresolved(ReceiptStatus.Of(JsonSerializer.SerializeToElement(Work.Result, _jsonOptions))); }
+                catch { return true; }
+            }
+        }
     }
     private sealed class ApiFailure(int status, string code, string message) : Exception(message)
     {
@@ -126,8 +140,23 @@ public static partial class SpireLinkMod
             _configuration.SettleStableMs = Math.Clamp(_configuration.SettleStableMs, 0, 500);
             _configuration.MaxCaptures = Math.Clamp(_configuration.MaxCaptures, 0, 1000);
             _configuration.ReceiptCapacity = Math.Clamp(_configuration.ReceiptCapacity, 1024, 65536);
-            Requests = new(_configuration.ReceiptCapacity, e => e.Work.IsCompleted);
+            Requests = new(_configuration.ReceiptCapacity, e => e.Resolved);
+            // The journal must not live where the game reads mod manifests; a rejected data_directory falls back to the default.
+            string? gameDirectory = null, modDirectory = null;
+            try { gameDirectory = Path.GetDirectoryName(OS.GetExecutablePath()); } catch { }
+            try { modDirectory = Path.GetDirectoryName(typeof(SpireLinkMod).Assembly.Location); } catch { }
+            if (DataDirectoryPolicy.Reject(_configuration.DataDirectory, gameDirectory, modDirectory) is { } rejected)
+            {
+                GD.PrintErr($"[Spire Link] {rejected} ({_configuration.DataDirectory}); using {DefaultDataDirectory} instead");
+                _lastError = rejected;
+                _configuration.DataDirectory = DefaultDataDirectory;
+            }
             _journal = new EvidenceJournal(_configuration.DataDirectory, SessionId);
+            if (_configuration.MaxSessions > 0)
+            {
+                var pruned = EvidenceJournal.PruneSessions(_configuration.DataDirectory, _configuration.MaxSessions, _journal.SessionDirectory);
+                if (pruned.Count > 0) _journal.Record("sessions_pruned", new { kept = _configuration.MaxSessions, deleted = pruned });
+            }
             InstallCardGridGuard();
             InstallPunchOffGuard();
             StartMainThreadWatchdog();
@@ -145,31 +174,28 @@ public static partial class SpireLinkMod
             if (Math.Abs(_configuration.TimeScale - 1.0) > 1e-9) Engine.TimeScale = _configuration.TimeScale;
             if (_configuration.MaxFps > 0) Engine.MaxFps = Math.Clamp(_configuration.MaxFps, 5, 240);
             if (_configuration.LowProcessor) OS.LowProcessorUsageMode = true;
-            // The game's own AutoSlayer bot flips this switch: waits, pauses and per-frame action pacing are skipped.
-            // "all" crashes the game when a shop room loads, so "combat" limits the fast path to fights.
-            // Choosing a card to transform (Neow's New Leaf) hangs the game in the fast path, so that screen runs normally.
-            // The confirm closes that screen and the transform animation then runs on the fast path, which hangs the main thread
-            // (148 confirm_selection requests in six hours of ro-hunt8/9 never answered, the game was killed each time). So the
-            // normal path also covers a few seconds after the screen was last on top.
-            if (_configuration.NonInteractive == "all")
+            // The game's own AutoSlayer bot flips this switch: waits, pauses and per-frame action pacing are skipped. Every mode
+            // shares the same exclusions (NonInteractivePolicy): the transform card selection plus a few seconds after it, whose
+            // animation hangs the main thread on the fast path, and the merchant room, where the fast path was once seen to crash.
+            if (NonInteractivePolicy.Normalize(_configuration.NonInteractive) is not { } nonInteractive)
+            {
+                _lastError = $"non_interactive '{_configuration.NonInteractive}' is not supported; using off";
+                GD.PrintErr($"[Spire Link] {_lastError} (supported: {string.Join(", ", NonInteractivePolicy.SupportedModes)})");
+                nonInteractive = "off";
+            }
+            _configuration.NonInteractive = nonInteractive;
+            if (nonInteractive != "off")
                 MegaCrit.Sts2.Core.Helpers.NonInteractiveMode.AutoSlayerCheck = () =>
                 {
                     long now = System.Environment.TickCount64;
-                    if (MegaCrit.Sts2.Core.Nodes.Screens.Overlays.NOverlayStack.Instance?.Peek() is MegaCrit.Sts2.Core.Nodes.Screens.CardSelection.NDeckTransformSelectScreen)
-                    {
-                        Interlocked.Exchange(ref _transformSeenAt, now);
-                        return false;
-                    }
-                    return now - Interlocked.Read(ref _transformSeenAt) > 6000;
+                    bool transform = MegaCrit.Sts2.Core.Nodes.Screens.Overlays.NOverlayStack.Instance?.Peek()
+                        is MegaCrit.Sts2.Core.Nodes.Screens.CardSelection.NDeckTransformSelectScreen;
+                    if (transform) Interlocked.Exchange(ref _transformSeenAt, now);
+                    bool merchant = MegaCrit.Sts2.Core.Runs.RunManager.Instance?.DebugOnlyGetState()?.CurrentRoom
+                        is MegaCrit.Sts2.Core.Rooms.MerchantRoom || MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance != null;
+                    bool combat = MegaCrit.Sts2.Core.Combat.CombatManager.Instance?.IsInProgress == true;
+                    return NonInteractivePolicy.Allow(nonInteractive, combat, merchant, transform, now, Interlocked.Read(ref _transformSeenAt));
                 };
-            else if (_configuration.NonInteractive == "noshop")
-                // Everything except the merchant room, whose load crashes the game in this mode.
-                MegaCrit.Sts2.Core.Helpers.NonInteractiveMode.AutoSlayerCheck = () =>
-                    MegaCrit.Sts2.Core.Runs.RunManager.Instance?.DebugOnlyGetState()?.CurrentRoom
-                        is not MegaCrit.Sts2.Core.Rooms.MerchantRoom && MegaCrit.Sts2.Core.Nodes.Rooms.NMerchantRoom.Instance == null;
-            else if (_configuration.NonInteractive == "combat")
-                MegaCrit.Sts2.Core.Helpers.NonInteractiveMode.AutoSlayerCheck =
-                    () => MegaCrit.Sts2.Core.Combat.CombatManager.Instance?.IsInProgress == true;
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://127.0.0.1:{_configuration.Port}/");
             _listener.Start();
@@ -329,9 +355,10 @@ public static partial class SpireLinkMod
         {
             if (context.Request.HttpMethod == "GET" && route == "/health")
             {
+                // Unauthenticated: only flags, never the error text itself (it can contain local paths). /v1/diagnostics has the text.
                 await Respond(context.Response, 200, new { api_version = "1", bridge_version = Version, build_sha256 = _buildHash, session_id = SessionId,
-                    status = "ok", state_version = Snapshots.Current?.Version, evidence_error = _journal?.LastError,
-                    last_error = _lastError, control_revision = Interlocked.Read(ref _controlRevision),
+                    status = "ok", state_version = Snapshots.Current?.Version, has_evidence_error = _journal?.LastError != null,
+                    has_last_error = _lastError != null, control_revision = Interlocked.Read(ref _controlRevision),
                     receipt_count = Requests.Count, receipt_capacity = _configuration.ReceiptCapacity,
                     game_version = _gameVersion, tested_game_versions = TestedGameVersions, compatibility = GameVersionCheck.Compatibility(_gameVersion, TestedGameVersions) });
                 return;
@@ -392,9 +419,9 @@ public static partial class SpireLinkMod
                         // Publish identity and settlement storage before a worker can
                         // enter the game. An observer may resolve it immediately.
                         entry = new(fingerprint, new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously).Task);
-                        // The oldest finished receipts are evicted when the store is full; only a store full of unfinished requests refuses.
+                        // The oldest resolved receipts are evicted when the store is full; only a store full of unresolved requests refuses.
                         if (Requests.TryAdd(requestId, entry) == ReceiptAdd.Full)
-                            throw new ApiFailure(503, "receipt_capacity", "Receipt store is full of unfinished requests; no request was executed. Inspect diagnostics before continuing.");
+                            throw new ApiFailure(503, "receipt_capacity", "Receipt store is full of unresolved requests; no request was executed. Inspect diagnostics before continuing.");
                         entry.Work = Task.Run(() => ExecuteRequest(requestId, clone));
                         _ = entry.Work.ContinueWith(completed =>
                         {
@@ -407,8 +434,8 @@ public static partial class SpireLinkMod
                 {
                     result = entry.Present(await entry.Work.WaitAsync(TimeSpan.FromSeconds(20), Stopping.Token));
                     if (replay) result = CompactReceipt(result);
-                    var resultJson = JsonSerializer.SerializeToElement(result, _jsonOptions);
-                    if (resultJson.TryGetProperty("status", out var resultStatus) && resultStatus.GetString() == "rejected") status = 409;
+                    // rejected 409; accepted/pending (the game has not yet shown the effect) 202; completed and unknown 200.
+                    status = ReceiptStatus.HttpStatus(ReceiptStatus.Of(JsonSerializer.SerializeToElement(result, _jsonOptions)));
                 }
                 catch (TimeoutException)
                 {
@@ -422,7 +449,12 @@ public static partial class SpireLinkMod
                 string id = Uri.UnescapeDataString(route[13..]);
                 if (!Requests.TryGet(id, out var entry)) throw new ApiFailure(404, "request_not_found", "Unknown request_id");
                 if (!entry.Work.IsCompleted) { status = 202; result = new { request_id = id, status = "pending" }; }
-                else result = entry.Present(await entry.Work);
+                else
+                {
+                    result = entry.Present(await entry.Work);
+                    status = ReceiptStatus.HttpStatus(ReceiptStatus.Of(JsonSerializer.SerializeToElement(result, _jsonOptions)));
+                    if (status == 409) status = 200; // a looked-up rejection is a stored fact, not a new conflict
+                }
             }
             else if (context.Request.HttpMethod == "GET" && route == "/v1/instance")
             {
@@ -522,7 +554,7 @@ public static partial class SpireLinkMod
             }
             else if (context.Request.HttpMethod == "GET" && route == "/v1/capabilities")
                 result = new { api_version = "1", bridge_version = Version, transport = "direct_http", singleplayer_only = true,
-                    observation_details = new[] { "compact", "full" }, guarded_actions = true, idempotency = "session_scoped_identical_payload_oldest_finished_evicted_when_full",
+                    observation_details = new[] { "compact", "full" }, guarded_actions = true, idempotency = "session_scoped_identical_payload_oldest_resolved_evicted_when_full",
                     receipt_capacity = _configuration.ReceiptCapacity, knowledge = new[] { "all_registered_cards", "base_and_upgraded_variants", "keywords_and_powers" },
                     diagnostics = true, recovery = "reconcile_only_no_force_unlock", ai_importance = "client_reported_optional_local_capture",
                     state_hash = "opaque_server_generated_sha256", legal_actions = "current_snapshot_candidates_rechecked_by_game",
@@ -744,8 +776,9 @@ public static partial class SpireLinkMod
             recovery = new { can_reconcile = true, can_force_unlock = false,
                 suggested_action = status.Status is "blocked" or "unsupported" ? "save_evidence_and_inspect" : pending ? "wait_observe_and_receipt" : "observe" },
             receipts = new { count = Requests.Count, capacity = _configuration.ReceiptCapacity, remaining = _configuration.ReceiptCapacity - Requests.Count,
-                near_capacity = Requests.Count >= _configuration.ReceiptCapacity * 0.9, eviction = "oldest_finished_when_full", evicted = Requests.Evicted },
-            last_error = _lastError, evidence_error = _journal?.LastError,
+                near_capacity = Requests.Count >= _configuration.ReceiptCapacity * 0.9, eviction = "oldest_resolved_when_full", evicted = Requests.Evicted },
+            last_error = _lastError, evidence_error = _journal?.LastError, evidence_dropped = _journal?.Dropped,
+            data_directory = _configuration.DataDirectory, non_interactive = _configuration.NonInteractive,
             rule = "Reconciliation only observes evidence; it never clicks, retries, or unlocks an unresolved game operation." };
     }
 

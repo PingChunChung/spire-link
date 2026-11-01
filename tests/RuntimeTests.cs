@@ -61,6 +61,36 @@ Check(KnowledgeText.NormalizeEnergyIcons("1[IRONCLAD_ENERGY_ICON.PNG]與[star_ic
     "Only energy icons normalize; star and other resource icons remain distinct");
 Check(KnowledgeText.NormalizeEnergyIcons("造成10點傷害。") == "造成10點傷害。",
     "Ordinary effect values must remain unchanged");
+// HTTP status of a receipt: unfinished outcomes (accepted, pending) answer 202 on /v1/actions and on receipt lookups.
+Check(ReceiptStatus.HttpStatus("completed") == 200 && ReceiptStatus.HttpStatus("unknown") == 200 && ReceiptStatus.HttpStatus(null) == 200, "final outcomes are 200");
+Check(ReceiptStatus.HttpStatus("accepted") == 202 && ReceiptStatus.HttpStatus("pending") == 202, "accepted and pending are 202");
+Check(ReceiptStatus.HttpStatus("rejected") == 409, "rejected is 409");
+Check(ReceiptStatus.Of(JsonSerializer.SerializeToElement(new { status = "accepted" }, options)) == "accepted" &&
+      ReceiptStatus.Of(JsonSerializer.SerializeToElement(new { request_id = "x" }, options)) == null, "status is read from the receipt");
+Check(ReceiptStatus.IsUnresolved("accepted") && ReceiptStatus.IsUnresolved("pending") && ReceiptStatus.IsUnresolved("unknown") &&
+      !ReceiptStatus.IsUnresolved("completed") && !ReceiptStatus.IsUnresolved("rejected"), "unresolved statuses are the ones a late settlement can still update");
+{
+    // A settled resolution answers 200 for a receipt that was accepted, and the store may then evict it.
+    var resolution = new ReceiptResolution();
+    var accepted = new { request_id = "late", status = "accepted" };
+    Check(!resolution.Settled && ReceiptStatus.HttpStatus(ReceiptStatus.Of(JsonSerializer.SerializeToElement(resolution.Apply(accepted, options), options))) == 202,
+        "an unsettled accepted receipt answers 202");
+    resolution.MarkSettled(9, "h", DateTimeOffset.UtcNow);
+    Check(resolution.Settled && ReceiptStatus.HttpStatus(ReceiptStatus.Of(JsonSerializer.SerializeToElement(resolution.Apply(accepted, options), options))) == 200,
+        "a settled receipt answers 200");
+}
+// data_directory may not be where the game reads mod manifests.
+string game = Path.Combine(Path.GetTempPath(), "sts2-game"), mod = Path.Combine(game, "mods", "SpireLink");
+Check(DataDirectoryPolicy.Reject(Path.Combine(game, "mods", "SpireLink", "data"), game, mod) != null, "inside mods/ is rejected");
+Check(DataDirectoryPolicy.Reject(Path.Combine(game, "mods"), game, mod) != null, "mods/ itself is rejected");
+Check(DataDirectoryPolicy.Reject(Path.Combine(game, "MODS", "x"), game, mod) != null, "the check ignores case");
+Check(DataDirectoryPolicy.Reject(Path.Combine(game, "mods", "..", "logs"), game, mod) == null, "a path that only passes through mods/ is allowed");
+string workshopMod = Path.Combine(Path.GetTempPath(), "Steam", "steamapps", "workshop", "content", "2868840", "123");
+Check(DataDirectoryPolicy.Reject(Path.Combine(workshopMod, "data"), game, workshopMod) != null, "inside the Workshop mod folder is rejected");
+Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "steamapps", "workshop", "content", "other"), game, null) != null, "any Workshop content folder is rejected");
+Check(DataDirectoryPolicy.Reject(Path.Combine(game, "modsdata"), game, mod) == null, "a sibling whose name starts with mods is allowed");
+Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "SpireLink"), game, mod) == null, "the default location is allowed");
+Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "SpireLink"), null, null) == null, "unknown game and mod folders reject nothing but Workshop paths");
 Check(GameVersionCheck.Compatibility("v0.107.1", new[] { "0.107.1" }) == "tested", "The game's v-prefixed version matches a tested version");
 Check(GameVersionCheck.Compatibility("v0.111.0", new[] { "0.107.1" }) == "untested_game_version", "A newer game version is reported as untested");
 Check(GameVersionCheck.Compatibility(null, new[] { "0.107.1" }) == "unknown_game_version", "A missing game version is never reported as tested");

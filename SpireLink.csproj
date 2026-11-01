@@ -8,6 +8,11 @@
     <AssemblyName>SpireLink</AssemblyName>
     <Version>0.3.0</Version>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The shipped DLL must not carry the build machine's paths (user name) in its debug directory or in stack traces:
+         source paths are mapped to /_/ and the PDB is embedded, so no RSDS record points at a local file. -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/</PathMap>
+    <DebugType>embedded</DebugType>
     <STS2GameDir Condition="'$(STS2GameDir)' == ''">$(STS2_GAME_DIR)</STS2GameDir>
     <STS2GameDataDir Condition="'$(STS2GameDataDir)' == ''">$(STS2GameDir)/data_sts2_windows_x86_64</STS2GameDataDir>
   </PropertyGroup>

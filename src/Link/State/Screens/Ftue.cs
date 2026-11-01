@@ -14,6 +14,8 @@ namespace SpireLink.State.Screens;
 // advance button is found)}, "popup" {..., message: "Popup active.", body: null, options: [{name, enabled}] from the vertical
 // popup's yes/no buttons or any visible popup buttons}. The popup's own title and body are private properties the old
 // reader never reached, so the message stays the constant; the bridge's ui_overlay context carries the visible text.
+// An option's name is derived from the button's translated caption (an id that older recordings rely on); a yes/no button of
+// a vertical popup also carries role: "yes"/"no" from the button's own IsYes flag, which is the same in every language.
 // The node finders feed that context (BridgeGame.AddVisibleOverlayContext) and the menu actions.
 internal static class FtueScreens
 {
@@ -44,7 +46,12 @@ internal static class FtueScreens
         var popup = VisiblePopup(root);
         var buttons = popup != null ? PopupOptions(popup) : PopupButtonOptions(root);
         if (buttons.Count == 0) return null;
-        var state = Menu("popup", "Popup active.", buttons.Select(b => Ui.Option(b.Name, b.Button.IsEnabled)).ToArray());
+        var state = Menu("popup", "Popup active.", buttons.Select(b =>
+        {
+            var option = Ui.Option(b.Name, b.Button.IsEnabled);
+            if (b.Role != null) option["role"] = b.Role;
+            return option;
+        }).ToArray());
         state["body"] = null;
         return state;
     }
@@ -106,34 +113,35 @@ internal static class FtueScreens
         return null;
     }
 
-    // A vertical popup's clickable yes and no buttons, named by their caption.
-    public static List<(string Name, NClickableControl Button)> PopupOptions(NVerticalPopup popup)
+    // A vertical popup's clickable yes and no buttons, named by their caption, with the role the game gives them.
+    public static List<(string Name, NClickableControl Button, string? Role)> PopupOptions(NVerticalPopup popup)
     {
-        var options = new List<(string, NClickableControl)>();
-        foreach (var (button, fallback) in new[] { (popup.YesButton, "yes"), (popup.NoButton, "no") })
-            if (Ui.Clickable(button)) options.Add((Text.OptionName(Caption(button)) ?? fallback, button));
+        var options = new List<(string, NClickableControl, string?)>();
+        foreach (var (button, role) in new[] { (popup.YesButton, "yes"), (popup.NoButton, "no") })
+            if (Ui.Clickable(button)) options.Add((Text.OptionName(Caption(button)) ?? role, button, role));
         return options;
     }
 
     // Without a vertical popup: every shown button in the open modal, every yes/no button anywhere, then every button in
     // a visible modal container, one entry per distinct name.
-    public static List<(string Name, NClickableControl Button)> PopupButtonOptions(Node root)
+    public static List<(string Name, NClickableControl Button, string? Role)> PopupButtonOptions(Node root)
     {
-        var options = new List<(string Name, NClickableControl Button)>();
+        var options = new List<(string Name, NClickableControl Button, string? Role)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var button in Nodes.All<NClickableControl>(Ui.OpenModal)) Add(options, seen, button, null);
-        foreach (var button in Nodes.All<NPopupYesNoButton>(root)) Add(options, seen, button, button.IsYes ? "yes" : "no");
+        foreach (var button in Nodes.All<NClickableControl>(Ui.OpenModal)) Add(options, seen, button);
+        foreach (var button in Nodes.All<NPopupYesNoButton>(root)) Add(options, seen, button);
         foreach (var container in Nodes.All<NModalContainer>(root))
             if (Nodes.Visible(container))
-                foreach (var button in Nodes.All<NClickableControl>(container)) Add(options, seen, button, null);
+                foreach (var button in Nodes.All<NClickableControl>(container)) Add(options, seen, button);
         return options;
     }
 
-    private static void Add(List<(string Name, NClickableControl Button)> options, HashSet<string> seen, NClickableControl button, string? fallback)
+    private static void Add(List<(string Name, NClickableControl Button, string? Role)> options, HashSet<string> seen, NClickableControl button)
     {
         if (!Ui.Shown(button)) return;
-        var name = Text.OptionName(Caption(button)) ?? fallback;
-        if (!string.IsNullOrWhiteSpace(name) && seen.Add(name)) options.Add((name, button));
+        var role = button is NPopupYesNoButton yesNo ? (yesNo.IsYes ? "yes" : "no") : null;
+        var name = Text.OptionName(Caption(button)) ?? role;
+        if (!string.IsNullOrWhiteSpace(name) && seen.Add(name)) options.Add((name, button, role));
     }
 
     // A button's caption, tags included: its label field, else the first text under it, else its node name without "Button".

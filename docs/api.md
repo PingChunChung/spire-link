@@ -8,7 +8,7 @@ The API returns UTF-8 JSON. `session_id` separates mod sessions; `state_version`
 
 | Method / path | Description |
 |---|---|
-| `GET /health` | Mod liveness, version, build hash, session, receipt capacity and game version compatibility. |
+| `GET /health` | Mod liveness, version, build hash, session, current state version, receipt count and capacity, game version compatibility, and whether an error is recorded (the error text itself is only in `/v1/diagnostics`, behind the key). |
 | `GET /v1/observe` | State, action candidates, control/pending metadata. |
 | `POST /v1/actions` | Submit one session/version-guarded mutation. |
 | `GET /v1/requests/{request_id}` | Look up the receipt of an earlier request; creates and resends nothing. |
@@ -33,7 +33,7 @@ The API returns UTF-8 JSON. `session_id` separates mod sessions; `state_version`
 | `untested_game_version` | The mod loaded on a game version it was not verified on. Reading and actions may still work, but a game update can change screens and class names; treat unexpected `unsupported` or `blocked` states as a likely version issue. |
 | `unknown_game_version` | The game version could not be read. |
 
-The mod never refuses to start because of the game version; the game itself refuses to load it on versions older than `min_game_version` in the manifest.
+The mod never refuses to start because of the game version; the game itself refuses to load it on versions older than `min_game_version` in the manifest. On a version the release was not verified on, the mod may also fail to load at all (a renamed game class stops it before `/health` exists); nothing is promised beyond the tested versions.
 
 ## Session changes
 
@@ -94,9 +94,9 @@ A `POST /v1/actions` body needs at least:
 
 `decision` is optional. If it carries `importance`, `level` must be `routine`, `notable` or `major`; `reason` is required and 1–500 characters long; `tags` holds at most 10 entries of at most 64 characters each; `capture`, if present, must be a boolean. With `capture: true`, the server records a highlight once the action has met its completion condition and saves a local PNG asynchronously. The image is never sent to the model automatically. By contrast, `POST /v1/decisions` only records a standalone decision and never captures a screenshot, even when it carries `importance`.
 
-`wait_timeout_ms` is 0–15000. The server may answer `completed`, `accepted`, `pending`, `unknown` or `rejected`. An action still running when the wait times out returns HTTP 202; do not resend it with a new request ID. Query the same receipt with `GET /v1/requests/{id}`. Late game-state evidence can update an earlier `accepted`, `pending` or `unknown` receipt to `completed`, with `initial_status`, settlement metadata and an `observation_ref`. Replays do not keep the full observation, and the response is not guaranteed to be identical byte for byte; observe again to get the current state.
+`wait_timeout_ms` is 0–15000. The server may answer `completed`, `accepted`, `pending`, `unknown` or `rejected`. The HTTP status follows the receipt's `status`: `completed` and `unknown` are 200, `accepted` and `pending` are 202 (the action was dispatched but the game has not yet shown its effect, or the request is still running after the server's 20-second wait), `rejected` is 409. On a 202 do not resend the action with a new request ID; query the same receipt with `GET /v1/requests/{id}`, which answers 202 while the receipt is still `accepted` or `pending` and 200 once it is final (a stored rejection is 200 there, since it is a fact about an earlier request). Late game-state evidence can update an earlier `accepted`, `pending` or `unknown` receipt to `completed`, with `initial_status`, settlement metadata and an `observation_ref`. Replays do not keep the full observation, and the response is not guaranteed to be identical byte for byte; observe again to get the current state.
 
-Receipt keys are session-scoped, and the fingerprint of the JSON body must match for the same ID. `receipt_capacity` defaults to 16384 and ranges from 1024 to 65536; nothing is evicted within a session. When the store is full, a new action returns HTTP 503 and is not executed. Reusing an ID with a different body returns 409 `request_id_conflict`. Version, session and action guard rejections return HTTP 409 (for example `stale_session`, `stale_state`, `action_unavailable`, `action_pending`); discard the old decision, observe again and decide again. The game runtime validates the action once more, so the action list is not a promise that execution will succeed.
+Receipt keys are session-scoped, and the fingerprint of the JSON body must match for the same ID. `receipt_capacity` defaults to 16384 and ranges from 1024 to 65536. A receipt is kept at least until it is resolved: `completed` or `rejected`, or an `accepted`/`pending`/`unknown` receipt whose late settlement was observed. When the store is full, the oldest resolved receipts are evicted (down to 90 % of the capacity) to make room, and an evicted ID answers 404 `request_not_found` if it is sent again; only a store with no resolved receipt to evict refuses a new action with HTTP 503 `receipt_capacity`, and that action is not executed. `GET /v1/diagnostics` reports the count, the capacity and how many receipts were evicted. Reusing an ID with a different body returns 409 `request_id_conflict`. Version, session and action guard rejections return HTTP 409 (for example `stale_session`, `stale_state`, `action_unavailable`, `action_pending`); discard the old decision, observe again and decide again. The game runtime validates the action once more, so the action list is not a promise that execution will succeed.
 
 ## Diagnostics and reconcile-only recovery
 
@@ -112,15 +112,23 @@ Receipt keys are session-scoped, and the fingerprint of the JSON body must match
 
 ## Local data and automatic capture
 
-Everything the mod writes stays in `%LOCALAPPDATA%\SpireLink` (configurable with `data_directory` in `SpireLink.cfg`, except the config itself):
+Everything the mod writes stays in `%LOCALAPPDATA%\SpireLink` (configurable with `data_directory` in `SpireLink.cfg`, except the config itself; the full list of settings is in the player README shipped with the release):
 
 - `SpireLink.cfg`: port, API key and the other settings.
-- `sessions/<session>/events.jsonl` and `states/`: the journal of one game launch. With no client connected it only holds the start and stop records; while a client observes and acts, it records requests, receipts and major run events.
+- `sessions/<session>/events.jsonl` and `states/`: the journal of one game launch. With no program connected it still writes a small journal: that the mod started and stopped (with its version, port and the game version), whether its two Harmony patches were installed, when one of them triggers (with the id of the current event room), and when the game's main thread stops running frames for 10 seconds (with the room type and event id). It saves no game states and no screenshots unless a program is connected or `auto_capture` is on. While a client observes and acts, it records every request, receipt and major run event, and saves the state before and after each action and each changed observation as one JSON file per state version under `states/` (tens of kilobytes each, so a long automated session can reach tens of megabytes).
 - `sessions/<session>/screenshots/`: PNGs saved by `POST /v1/captures`, by `decision.capture: true`, and, only when `auto_capture` is on, at run start, elites, bosses, combat end and critical HP.
+
+`data_directory` may not point inside the game's `mods` folder, inside the mod's own folder or inside a Steam Workshop content folder: the game reads every `.json` under `mods/` as a mod manifest, and a Workshop update replaces the mod folder. Such a path is rejected at startup (logged in the game log and in `last_error`) and the default is used.
+
+The journal is written by a background writer through a bounded queue (4096 entries). If the disk cannot keep up, new entries are dropped rather than queued in memory or written on the game thread; `GET /v1/diagnostics` reports the number dropped in `evidence_dropped`, and `evidence_error` names the last drop. Session folders are never deleted unless `max_sessions` is set, in which case the oldest folders beyond that number are deleted when the game starts.
 
 `auto_capture` is `false` by default. Set it to `true` in `SpireLink.cfg` to sample the state continuously and save the automatic screenshots above, limited by `max_captures` per run. To clear the data, close the game and delete the `sessions` folder; deleting `SpireLink.cfg` generates a new API key on the next launch.
 
 ## Decisions, captures, events and timing
+
+`state.event.options[].text_key` is the game's localization key of an event option (for example `SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_0`), and `state.event.dynamic_vars` holds the event model's variables by name (a number such as `HpLoss`, or a string such as a card title). Both are the same in every game language, so a client can read a cost or recognise a repeated option without parsing the translated sentence; the mod's own completion check for Slippery Bridge uses them and falls back to the English or Simplified Chinese sentence only when a state carries neither.
+
+On a `menu` state with `menu_screen: "popup"`, each option has a `name` derived from the button's translated caption and, for the yes/no buttons of the game's vertical popups, a `role` of `yes` or `no` that the game sets independently of the language. The `menu_select` action's `option` is the caption-derived name when it is one the mod recognises (English, Traditional and Simplified Chinese captions), so recordings made with those languages keep their action ids; a yes/no button with a caption in another language is exposed with its role as the `option` and the caption as the `label`, and the action handler accepts either form. Popup buttons that are neither yes/no nor a recognised caption are not exposed in other languages; that is a known limitation.
 
 `state.hand_select.selector` keeps the game's current `CardSelectorPrefs`: `prompt_table`, `prompt_key`, `min_select`, `max_select`, `require_manual_confirmation`, `cancelable`, plus the `filter_target_model_id` of the current filter delegate. These are runtime truth; they are null when the prefs or the prompt cannot be read, and the source is never guessed from localized text. The ID can also be null when the filter target is not a model, so do not treat this field as the source of every card selection. `selected_instances` is an array of instance ID strings; the complete selected cards are listed in `selected_cards`.
 

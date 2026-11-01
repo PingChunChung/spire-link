@@ -129,9 +129,33 @@ static class PostconditionTests
         Case(true, loopBefore, loopAfter, "LOOP body and candidate can both remain the same", versionAfter + 2, versionAfter + 3);
         Case(false, loopBefore, Rewrite(loopAfter, n => n["player"]!["hp"] = 42), "LOOP wrong HP loss", versionAfter + 2, versionAfter + 3);
         Case(false, loopBefore, Rewrite(loopAfter, n => n["event"]!["options"]![1]!["description"] = "Lose 11 HP. The card in the above option is randomized."), "LOOP wrong next cost", versionAfter + 2, versionAfter + 3);
+        // Structured model data (the event's HpLoss variable and the option's localization key) decides the cost in any
+        // language; the displayed sentence is only the fallback for a state without dynamic_vars.
+        string Structured(string json, int hpLoss, string key, string description) => Rewrite(json, n =>
+        {
+            n["event"]!["dynamic_vars"] = new JsonObject { ["HpLoss"] = hpLoss, ["RandomCard"] = "Flick-Flack" };
+            n["event"]!["options"]![1]!["text_key"] = key;
+            n["event"]!["options"]![0]!["text_key"] = "SLIPPERY_BRIDGE.pages.INITIAL.options.OVERCOME";
+            n["event"]!["options"]![1]!["description"] = description;
+        });
+        var frenchBefore = Structured(before, 3, "SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_0", "Perdez 3 PV. La carte ci-dessus est choisie au hasard.");
+        var frenchAfter = Structured(after, 4, "SLIPPERY_BRIDGE.pages.HOLD_ON_0.options.HOLD_ON_1", "Perdez 4 PV. La carte ci-dessus est choisie au hasard.");
+        Case(true, frenchBefore, frenchAfter, "structured cost settles in a language the text fallback does not know");
+        Case(false, frenchBefore, Structured(after, 3, "SLIPPERY_BRIDGE.pages.HOLD_ON_0.options.HOLD_ON_1", "Perdez 4 PV."), "structured next cost did not advance");
+        Case(false, frenchBefore, Structured(after, 5, "SLIPPERY_BRIDGE.pages.HOLD_ON_0.options.HOLD_ON_1", "Perdez 5 PV."), "structured next cost skipped a step");
+        Case(false, frenchBefore, Structured(after, 4, "SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_0", "Perdez 4 PV."), "same option key means the page did not advance");
+        Case(false, frenchBefore, Structured(after, 4, "SLIPPERY_BRIDGE.pages.INITIAL.options.OVERCOME", "Perdez 4 PV."), "a key that is not Hold On");
+        Case(false, frenchBefore, Rewrite(frenchAfter, n => n["event"]!["dynamic_vars"] = new JsonObject { ["RandomCard"] = "x" }), "structured data without the cost never falls back to text");
+        Case(false, frenchBefore, Rewrite(frenchAfter, n => n["player"]!["hp"] = 55), "structured cost with the wrong HP loss");
+        var loopStructuredBefore = Structured(after, 9, "SLIPPERY_BRIDGE.pages.HOLD_ON_5.options.HOLD_ON_6", "x");
+        var loopStructuredAfter = Rewrite(Structured(after, 10, "SLIPPERY_BRIDGE.pages.HOLD_ON_6.options.HOLD_ON_LOOP", "x"), n => n["player"]!["hp"] = 45);
+        Case(true, loopStructuredBefore, loopStructuredAfter, "structured LOOP step", versionAfter + 2, versionAfter + 3);
+        Case(true, Rewrite(loopStructuredAfter, n => n["player"]!["hp"] = 50), Rewrite(Structured(after, 11, "SLIPPERY_BRIDGE.pages.HOLD_ON_LOOP.options.HOLD_ON_LOOP", "x"), n => n["player"]!["hp"] = 40),
+            "structured LOOP repeats with the same key", versionAfter + 4, versionAfter + 5);
         var chineseBefore = Rewrite(before, n => n["event"]!["options"]![1]!["description"] = "失去3点生命。重新随机上方选项中的卡牌。");
         var chineseAfter = Rewrite(after, n => n["event"]!["options"]![1]!["description"] = "失去4点生命。重新随机上方选项中的卡牌。");
-        Case(true, chineseBefore, chineseAfter, "captured Chinese cost grammar");
+        Case(true, chineseBefore, chineseAfter, "captured Chinese cost grammar (text fallback)");
+        Case(false, chineseBefore, Rewrite(chineseAfter, n => n["event"]!["options"]![1]!["description"] = "Perdez 4 PV."), "unknown language without structured data stays pending");
         Case(false, chineseBefore, Rewrite(chineseAfter, n => n["event"]!["options"]![1]!["description"] = "失去4金币。重新随机上方选项中的卡牌。"), "unknown localized numeric cost");
     }
     static void NextRoundSelectorContinuation()
@@ -459,7 +483,7 @@ static class PostconditionTests
         Check(false, buy, hammerShop, Rewrite(hammerSelection, n => n["run"]!.AsObject().Remove("seed")), "unknown continuation seed");
         Check(false, buy, hammerShop, Rewrite(hammerSelection, n => n["run"]!["floor"] = 13), "purchase cannot claim a different room");
         // Preserve the enabled choices, exact FTUE type, and new-run metadata observed
-        // in isolated-instance-02/headless-tutorial-{prepared,blocked-evidence}.json.
+        // in the maintainer's captured tutorial launch (headless-tutorial-{prepared,blocked-evidence}.json).
         const string prompt = """
             {"state_type":"menu","menu_screen":"tutorial_prompt","options":[{"name":"no","enabled":true},{"name":"yes","enabled":true}],
              "ui_overlay":{"type":"NAcceptTutorialsFtue","instance_id":"492260308741"},"context":{"run_id":null},"engine":{"action_queue_idle":true}}
@@ -530,6 +554,7 @@ static class PostconditionTests
                 Check(true, no, snapshots[2]["observation"]!["state"]!.ToJsonString(), snapshots[3]["observation"]!["state"]!.ToJsonString(), "full captured tutorial launch");
                 Console.WriteLine("Captured continuation replays passed: 2");
             }
+            else Console.WriteLine("Skipped: full captured Hammer and tutorial replays (maintainer evidence under test-results/ is not in this checkout)");
         }
     }
     static void EndTurnRetentionContinuation()
@@ -731,6 +756,7 @@ static class PostconditionTests
                     "original raw state with explicitly synthetic, assembly-verified selector enrichment");
                 Console.WriteLine("Captured end-turn retention checks passed: raw rejected; synthetic origin enrichment accepted");
             }
+            else Console.WriteLine("Skipped: captured end-turn retention replay (maintainer evidence under test-results/ is not in this checkout)");
             var livePath = System.IO.Path.Combine(root.FullName, "test-results/isolated-instance-02/generations/g0005/retention/end-turn-continuation.json");
             if (System.IO.File.Exists(livePath))
             {
@@ -739,11 +765,12 @@ static class PostconditionTests
                     "g0005 captured live selector origin settles the retention parent without synthetic enrichment");
                 Console.WriteLine("Captured g0005 live retention replay passed: 1");
             }
+            else Console.WriteLine("Skipped: captured live retention replay (maintainer evidence under test-results/ is not in this checkout)");
         }
     }
     static void SlyDiscardPlaysOnDiscard()
     {
-        // Captured lane02 ro-hunt5 game 9: Master Planner made Prepared Sly, so discarding Prepared played it on the spot
+        // Captured in a live run: Master Planner made Prepared Sly, so discarding Prepared played it on the spot
         // (draw 1, discard 1) and opened a second discard selector while the discarded card was in no pile.
         var fixture = JsonNode.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "fixtures/prepared-sly-discard.json")))!;
         var confirm = Action("combat_confirm_selection");
@@ -765,7 +792,7 @@ static class PostconditionTests
     }
     static void HandTrickRepeatsItsSelector()
     {
-        // Captured lane04 ro-hunt6 seed HUNTRSEED038: Hand Trick played twice (Burst) opens its selector again after the confirm.
+        // Captured in a live run (seed HUNTRSEED038): Hand Trick played twice (Burst) opens its selector again after the confirm.
         var fixture = JsonNode.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "fixtures/hand-trick-repeat.json")))!;
         var confirm = Action("combat_confirm_selection");
         var before = fixture["before"]!.ToJsonString();
@@ -846,6 +873,19 @@ static class PostconditionTests
         const string grid = """{"state_type":"card_select","card_select":{"preview_showing":false,"cards":[{"index":0,"id":"A","selected":false},{"index":1,"id":"B","selected":false}],"can_confirm":false}}""";
         Check(true, Action("select_card", ("index", 1)), grid, grid.Replace("\"id\":\"B\",\"selected\":false", "\"id\":\"B\",\"selected\":true"), "chosen card selected");
         Check(false, Action("select_card", ("index", 0)), grid, grid.Replace("\"id\":\"B\",\"selected\":false", "\"id\":\"B\",\"selected\":true"), "other selected card does not complete target");
+        // A click on a selected card unpicks it (the grid lets the player change the pick before confirming); the
+        // deselect must settle, or the next select/confirm would be refused with action_pending.
+        var picked = grid.Replace("\"id\":\"B\",\"selected\":false", "\"id\":\"B\",\"selected\":true");
+        Check(true, Action("select_card", ("index", 1)), picked, grid, "deselecting the chosen card settles");
+        Check(false, Action("select_card", ("index", 0)), picked, grid, "another card's deselect does not settle this one");
+        Check(false, Action("select_card", ("index", 1)), picked, picked, "an unchanged selection is not a toggle");
+        Check(false, Action("select_card", ("index", 1)), picked,
+            Rewrite(grid, n => n["card_select"]!["cards"]![1]!.AsObject().Remove("selected")), "unknown selected status after a deselect fails closed");
+        Check(false, Action("select_card", ("index", 1)), picked,
+            Rewrite(grid, n => n["card_select"]!["cards"]![1]!["id"] = "C"), "a different card at the index is not this card's deselect");
+        var pickedTwo = Rewrite(picked, n => n["card_select"]!["cards"]![0]!["selected"] = true);
+        Check(true, Action("select_card", ("index", 1)), pickedTwo, Rewrite(pickedTwo, n => n["card_select"]!["cards"]![1]!["selected"] = false),
+            "deselecting one of two picks settles and keeps the other");
         Check(true, Action("select_card", ("index", 0)), grid,
             grid.Replace("\"preview_showing\":false", "\"preview_showing\":true,\"preview_cards\":[{\"id\":\"A\"}]"), "selected card preview opens");
         Check(false, Action("select_card", ("index", 0)), grid,

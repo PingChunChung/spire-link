@@ -92,12 +92,12 @@ internal static class MenuActions
         return Outcome.Ok("Dismissed tutorial popup");
     }
 
-    // A popup option is clicked by the name the reader reported for it.
-    private static Dictionary<string, object?> Popup(List<(string Name, NClickableControl Button)> options, string option)
+    // A popup option is clicked by the name the reader reported for it, or by its role (yes/no) when it has one.
+    private static Dictionary<string, object?> Popup(List<(string Name, NClickableControl Button, string? Role)> options, string option)
     {
-        foreach (var (name, button) in options)
+        foreach (var (name, button, role) in options)
         {
-            if (!Is(option, name)) continue;
+            if (!Is(option, name) && !(role != null && Is(option, role))) continue;
             if (!Ui.Clickable(button)) return Outcome.Fail($"Popup option '{name}' is disabled");
             button.ForceClick();
             return Outcome.Ok($"Selected popup option: {name}");
