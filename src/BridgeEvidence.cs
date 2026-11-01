@@ -33,6 +33,7 @@ public sealed class EvidenceJournal : IDisposable
     private readonly Task _errorLogTask;
     private readonly SemaphoreSlim _errorSignal = new(0, 1);
     private readonly CancellationTokenSource _stopErrorLog = new();
+    private readonly TextWriter? _errorWriter;
     private string? _lastError;
     private long _sequence;
     private long _dropped;
@@ -44,14 +45,17 @@ public sealed class EvidenceJournal : IDisposable
     public const int DefaultQueueCapacity = 4096;
 
     // Errors (drops included) only set the last error and a counter on the reporting thread, which can be the game thread;
-    // a background task writes at most one summary line per interval to the error output.
+    // a background task writes at most one summary line per interval to the error output. The error output is only ever
+    // written by that task: Dispose (the game's shutdown thread) waits for it at most this long and then leaves it behind.
     public static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(5);
+    public static readonly TimeSpan DisposeErrorLogWait = TimeSpan.FromSeconds(1);
 
     public EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity = DefaultQueueCapacity)
         : this(rootDirectory, sessionId, queueCapacity, startWriter: true) { }
 
-    // startWriter false leaves the queue unread (tests of the bound); nothing is ever written then.
-    internal EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity, bool startWriter)
+    // startWriter false leaves the queue unread (tests of the bound); nothing is ever written then. errorWriter replaces
+    // Console.Error for the summary lines (tests of the logger); it is read on the logger task only.
+    internal EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity, bool startWriter, TextWriter? errorWriter = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
@@ -71,6 +75,7 @@ public sealed class EvidenceJournal : IDisposable
             AllowSynchronousContinuations = false,
             FullMode = BoundedChannelFullMode.Wait // TryWrite returns false when full; nothing ever waits
         });
+        _errorWriter = errorWriter;
         _writerTask = startWriter ? Task.Run(WriterLoopAsync) : Task.CompletedTask;
         _errorLogTask = Task.Run(ErrorLogLoopAsync);
     }
@@ -228,32 +233,40 @@ public sealed class EvidenceJournal : IDisposable
             ReportError($"Evidence journal flush failed: {exception.GetBaseException().Message}");
         }
 
-        // Stop the background logger and write whatever it has not summarized yet; nothing reports after this point.
+        // Stop the background logger: on its way out it writes whatever it has not summarized yet (the flush errors above
+        // included). This thread never touches the error output itself, so a logger stuck in a slow Console.Error cannot
+        // hold up the shutdown: after the bounded wait the final line is left to the logger, or lost with it.
         try
         {
             _stopErrorLog.Cancel();
-            _errorLogTask.Wait(TimeSpan.FromSeconds(2));
+            _errorLogTask.Wait(DisposeErrorLogWait);
         }
         catch (Exception)
         {
-            // The logger only writes to the error output; a failure there is not worth more than the final line below.
+            // The logger only writes to the error output; a failure there is not worth anything at shutdown.
         }
-        WriteErrorSummary();
     }
 
     private async Task ErrorLogLoopAsync()
     {
-        while (true)
+        var stop = _stopErrorLog.Token;
+        while (!stop.IsCancellationRequested)
         {
-            try { await _errorSignal.WaitAsync(_stopErrorLog.Token).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return; }
+            try { await _errorSignal.WaitAsync(stop).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
             WriteErrorSummary();
-            try { await Task.Delay(ErrorLogInterval, _stopErrorLog.Token).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return; }
+            try { await Task.Delay(ErrorLogInterval, stop).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
         }
+        // Cancelling a waiting semaphore or delay can run this continuation inline on the thread that called Cancel, the
+        // disposing thread; hop to the pool first so that thread never reaches the error output.
+        await Task.Yield();
+        // The final line after Dispose, on this task: everything reported since the previous line.
+        WriteErrorSummary();
     }
 
-    // One line for every error reported since the previous line: the last message and how many there were.
+    // One line for every error reported since the previous line: the last message and how many there were. Runs on the
+    // logger task only; the error output can block, so no other thread calls this.
     private void WriteErrorSummary()
     {
         var count = Interlocked.Exchange(ref _errorsSinceLog, 0);
@@ -261,7 +274,7 @@ public sealed class EvidenceJournal : IDisposable
         try
         {
             var message = LastError;
-            Console.Error.WriteLine(count == 1
+            (_errorWriter ?? Console.Error).WriteLine(count == 1
                 ? $"[Spire Link evidence] {message}"
                 : $"[Spire Link evidence] {count} errors since the previous line; the last: {message}");
         }

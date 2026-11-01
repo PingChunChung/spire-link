@@ -71,7 +71,8 @@ public enum ReceiptAdd { Added, Exists, Full }
 /// Receipts by request id. When the store is full the oldest RESOLVED receipts are evicted (down to 90 % of the capacity); the predicate decides what resolved
 /// means (the mod: the request finished with a final status, or its late settlement was observed). A receipt that is still running or still unresolved is
 /// never evicted, so "Full" means that nothing old enough could go. Re-sending the id of a receipt that is still stored answers with that same receipt (idempotency);
-/// an id that was evicted is unknown again, which is harmless because a request id older than the whole window cannot match the current state version anyway.
+/// an id that was evicted is unknown again: a POST with it is a new request, and only the session and version guards stand between it and a second execution.
+/// The capacity bounds the store, not how long a receipt stays: eviction trims a batch of resolved receipts, and unresolved ones occupy slots meanwhile.
 /// Callers that need get-then-add as one step lock <see cref="Sync"/> (the lock is re-entrant).
 /// </summary>
 public sealed class ReceiptStore<T> where T : class

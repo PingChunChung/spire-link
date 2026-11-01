@@ -87,6 +87,45 @@ try
         throw new InvalidOperationException("A single summary line must carry the count of all 98 errors: " + errorLines[0]);
     Console.WriteLine("Evidence tests passed: bounded writer queue drops and counts instead of growing; drops are logged as a rate-limited summary.");
 
+    // The error output is written by the background logger only. After Dispose the logger writes the final summary line
+    // itself; the disposing thread (the game's shutdown thread) never writes to the error output.
+    var recording = new RecordingErrorWriter(blockFirstLine: false);
+    var logged = new EvidenceJournal(Path.Combine(testRoot, "logged"), "logged-session", queueCapacity: 2, startWriter: false, errorWriter: recording);
+    logged.Record("", new { });
+    await WaitUntilAsync(() => recording.Lines.Count == 1, "The logger did not write the first summary line.");
+    logged.Record("", new { }); // reported while the logger sleeps out its interval: only the final line can carry it
+    var disposeStarted = Stopwatch.GetTimestamp();
+    recording.ForbiddenThread = Environment.CurrentManagedThreadId; // a write on this thread while Dispose runs is Dispose writing
+    logged.Dispose();
+    recording.ForbiddenThread = -1;
+    if (Stopwatch.GetElapsedTime(disposeStarted) > EvidenceJournal.DisposeErrorLogWait + TimeSpan.FromSeconds(2))
+        throw new InvalidOperationException("Dispose with an idle logger must return at once.");
+    await WaitUntilAsync(() => recording.Lines.Count == 2, "The final summary line was not written after Dispose.");
+    if (!recording.Lines[1].Contains("eventType was empty", StringComparison.Ordinal))
+        throw new InvalidOperationException("The final line must carry the error reported before Dispose: " + recording.Lines[1]);
+    if (recording.Violations != 0)
+        throw new InvalidOperationException("The disposing thread must never write to the error output.");
+
+    // A logger stuck in a blocking error output (a slow Console.Error) does not hold up the shutdown: Dispose waits for it
+    // at most DisposeErrorLogWait and returns; the final line stays with the logger.
+    var blocking = new RecordingErrorWriter(blockFirstLine: true);
+    var stuck = new EvidenceJournal(Path.Combine(testRoot, "stuck"), "stuck-session", queueCapacity: 2, startWriter: false, errorWriter: blocking);
+    stuck.Record("", new { });
+    await WaitUntilAsync(() => blocking.Entered > 0, "The logger did not reach the error output.");
+    stuck.Record("", new { });
+    disposeStarted = Stopwatch.GetTimestamp();
+    blocking.ForbiddenThread = Environment.CurrentManagedThreadId;
+    stuck.Dispose();
+    blocking.ForbiddenThread = -1;
+    var disposeTook = Stopwatch.GetElapsedTime(disposeStarted);
+    if (disposeTook > EvidenceJournal.DisposeErrorLogWait + TimeSpan.FromSeconds(2))
+        throw new InvalidOperationException($"Dispose must not wait for a blocked logger beyond its bound; it took {disposeTook}.");
+    if (blocking.Lines.Count != 0 || blocking.Violations != 0)
+        throw new InvalidOperationException("Dispose must not write the final line itself while the logger is blocked.");
+    blocking.Unblock();
+    await WaitUntilAsync(() => blocking.Lines.Count == 2, "The blocked logger did not finish its line and the final one once released.");
+    Console.WriteLine("Evidence tests passed: Dispose never writes to the error output and returns within its bound when the logger is blocked.");
+
     // Old session folders are pruned to max_sessions in total, newest first; the current session counts towards the
     // quota but is never deleted, and a foreign folder is never touched.
     var pruneRoot = Path.Combine(testRoot, "prune");
@@ -135,5 +174,28 @@ static async Task WaitUntilAsync(Func<bool> condition, string timeoutMessage)
         }
 
         await Task.Delay(20);
+    }
+}
+
+// An error output for the logger: records every line, counts writes made on ForbiddenThread (the thread inside Dispose),
+// and optionally blocks the first WriteLine until Unblock, like a Console.Error nobody drains.
+sealed class RecordingErrorWriter(bool blockFirstLine) : TextWriter
+{
+    private readonly ManualResetEventSlim _gate = new(!blockFirstLine);
+    private int _entered;
+    private int _violations;
+    private int _forbiddenThread = -1;
+    public List<string> Lines { get; } = new();
+    public int Entered => Volatile.Read(ref _entered);
+    public int Violations => Volatile.Read(ref _violations);
+    public int ForbiddenThread { set => Volatile.Write(ref _forbiddenThread, value); }
+    public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+    public void Unblock() => _gate.Set();
+    public override void WriteLine(string? value)
+    {
+        if (Environment.CurrentManagedThreadId == Volatile.Read(ref _forbiddenThread)) Interlocked.Increment(ref _violations);
+        Interlocked.Increment(ref _entered);
+        _gate.Wait();
+        lock (Lines) Lines.Add(value ?? "");
     }
 }
