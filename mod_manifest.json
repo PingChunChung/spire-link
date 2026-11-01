@@ -4,6 +4,7 @@
   "author": "Chung Ping Chun",
   "description": "A local JSON API that lets external programs read the game state and send actions.",
   "version": "0.3.0",
+  "min_game_version": "0.107.1",
   "has_pck": false,
   "has_dll": true,
   "affects_gameplay": true

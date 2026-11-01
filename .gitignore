@@ -1,8 +1,12 @@
 bin/
 obj/
 dist/
+.install-backups/
 .vs/
 *.user
-# Created by the mod beside the DLL; holds the API key.
+# Development builds created these beside the DLL; they hold the API key. The mod now keeps them in %LOCALAPPDATA%\SpireLink.
 SpireLink.cfg
 SpireLink.next_run.cfg
+# Filled by build.ps1 -Workshop; the uploader writes its log next to the workspace.
+workshop/content/
+mod-uploader.log

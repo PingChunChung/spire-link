@@ -61,4 +61,7 @@ Check(KnowledgeText.NormalizeEnergyIcons("1[IRONCLAD_ENERGY_ICON.PNG]與[star_ic
     "Only energy icons normalize; star and other resource icons remain distinct");
 Check(KnowledgeText.NormalizeEnergyIcons("造成10點傷害。") == "造成10點傷害。",
     "Ordinary effect values must remain unchanged");
+Check(GameVersionCheck.Compatibility("v0.107.1", new[] { "0.107.1" }) == "tested", "The game's v-prefixed version matches a tested version");
+Check(GameVersionCheck.Compatibility("v0.111.0", new[] { "0.107.1" }) == "untested_game_version", "A newer game version is reported as untested");
+Check(GameVersionCheck.Compatibility(null, new[] { "0.107.1" }) == "unknown_game_version", "A missing game version is never reported as tested");
 Console.WriteLine($"Runtime tests passed: {checks} assertions");

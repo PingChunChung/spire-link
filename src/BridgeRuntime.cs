@@ -11,6 +11,19 @@ internal static class KnowledgeText
     public static string NormalizeEnergyIcons(string text) => EnergyIcon.Replace(text, "[energy]");
 }
 
+/// <summary>Compares the running game version with the versions a release was verified on.</summary>
+public static class GameVersionCheck
+{
+    // The game reports versions like "v0.107.1"; a missing version reads as unknown, never as tested.
+    public static string Compatibility(string? gameVersion, IEnumerable<string> tested)
+    {
+        if (string.IsNullOrWhiteSpace(gameVersion)) return "unknown_game_version";
+        string normalized = gameVersion.Trim().TrimStart('v', 'V');
+        return tested.Any(t => string.Equals(t.TrimStart('v', 'V'), normalized, StringComparison.OrdinalIgnoreCase))
+            ? "tested" : "untested_game_version";
+    }
+}
+
 /// <summary>Cancellation removes only queued work; a running game mutation is never interrupted.</summary>
 public sealed class QueuedInvocation<T>
 {

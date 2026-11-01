@@ -473,13 +473,12 @@ public static partial class SpireLinkMod
         return SpireLink.Actions.Dispatcher.Execute(action.Action, arguments);
     }
 
-    // An operator may drop SpireLink.next_run.cfg beside the DLL: {"ascension": 0, "seed": "ABC"}.
+    // An operator may drop SpireLink.next_run.cfg beside SpireLink.cfg in %LOCALAPPDATA%\SpireLink: {"ascension": 0, "seed": "ABC"}.
     // It is consumed by the next embark so batch tooling can pick difficulty and fixed seeds.
     // Returns the seed (or null), or an error dictionary when the spec cannot be applied.
     private static object? ApplyQueuedRunSpec()
     {
-        string directory = Path.GetDirectoryName(typeof(SpireLinkMod).Assembly.Location)!;
-        string path = Path.Combine(directory, NextRunFileName);
+        string path = Path.Combine(ConfigDirectory, NextRunFileName);
         if (!File.Exists(path)) return null;
         JsonElement spec;
         try { spec = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(path)); }

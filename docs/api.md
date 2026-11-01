@@ -1,6 +1,6 @@
 # HTTP API
 
-The default service address is `http://127.0.0.1:15528`. `GET /health` needs no authentication; every other endpoint requires `Authorization: Bearer <api_key>`. The token comes from `SpireLink.cfg` (JSON) next to the mod. Do not put it in prompts, command output or shared bundles.
+The default service address is `http://127.0.0.1:15528`. `GET /health` needs no authentication; every other endpoint requires `Authorization: Bearer <api_key>`. The token comes from `SpireLink.cfg` (JSON) in `%LOCALAPPDATA%\SpireLink`. Do not put it in prompts, command output or shared bundles.
 
 The API returns UTF-8 JSON. `session_id` separates mod sessions; `state_version` and `state_hash` identify a state snapshot within that session. Every action taken on a state should keep the session and version it was observed with; never apply a new session/version to an old decision.
 
@@ -8,7 +8,7 @@ The API returns UTF-8 JSON. `session_id` separates mod sessions; `state_version`
 
 | Method / path | Description |
 |---|---|
-| `GET /health` | Mod liveness, version, build hash, session and receipt capacity. |
+| `GET /health` | Mod liveness, version, build hash, session, receipt capacity and game version compatibility. |
 | `GET /v1/observe` | State, action candidates, control/pending metadata. |
 | `POST /v1/actions` | Submit one session/version-guarded mutation. |
 | `GET /v1/requests/{request_id}` | Look up the receipt of an earlier request; creates and resends nothing. |
@@ -22,6 +22,22 @@ The API returns UTF-8 JSON. `session_id` separates mod sessions; `state_version`
 | `GET /v1/metrics` | Route, timing and counter metrics. |
 | `GET /v1/events?limit=100` | Recent journal events; `limit` is 1–500. |
 | `GET /v1/capabilities` | Server version, limits, capabilities and unsupported items. |
+
+## Health and game version
+
+`GET /health` reports `game_version` (as the game reports it, for example `v0.107.1`, or null when it cannot be read), `tested_game_versions` (the versions this release was verified on) and `compatibility`:
+
+| Value | Meaning |
+|---|---|
+| `tested` | The running game version is one this release was verified on. |
+| `untested_game_version` | The mod loaded on a game version it was not verified on. Reading and actions may still work, but a game update can change screens and class names; treat unexpected `unsupported` or `blocked` states as a likely version issue. |
+| `unknown_game_version` | The game version could not be read. |
+
+The mod never refuses to start because of the game version; the game itself refuses to load it on versions older than `min_game_version` in the manifest.
+
+## Session changes
+
+`session_id` is created when the mod starts, and `state_version` counts within that session. A new `session_id` means the game restarted. Reloading a run, for example continuing a saved run from the main menu or rewinding with the Spire Rewind mod, rebuilds the run: `state_version` moves on and the run identity (`context.run_id`, `combat_epoch`) changes, and if the reload restarts the game the `session_id` changes too. After any of these, drop pending decisions, observe again and decide from the new state. An action that still carries the old session or version is rejected with a conflict; that is the expected outcome, not an error to retry.
 
 ## Observe and control versions
 
@@ -93,6 +109,16 @@ Receipt keys are session-scoped, and the fingerprint of the JSON body must match
 `GET /v1/knowledge/keywords?ids=...` looks up keyword IDs or power IDs; without `ids` it returns the complete registry. Both knowledge responses carry `catalog` metadata: game assembly/version/build, locale, `catalog_hash`, card and keyword counts, and catalog build timing. Caches should be keyed by catalog hash, locale and ID; when the metadata changes, re-fetch the entries you need. Normally hand the complete permanent deck and the options on screen to the policy layer, and query on demand only for an unfamiliar card, upgrade, keyword or power. Descriptions in the catalog are the text of that game build; they are not a simulation of every state modifier, trigger order or future card order.
 
 `catalog.card_description_context="out_of_combat_template"` means the template fetches descriptions with `PileType.None`, including the derived cards mentioned in tooltips. Character-specific energy icons are unified to `[energy]` in the catalog, and `catalog.text_tokens` gives its meaning as `one_energy`; other resource icons such as stars are not treated as energy. The current hand keeps the runtime descriptions; this normalization applies only to the knowledge catalog.
+
+## Local data and automatic capture
+
+Everything the mod writes stays in `%LOCALAPPDATA%\SpireLink` (configurable with `data_directory` in `SpireLink.cfg`, except the config itself):
+
+- `SpireLink.cfg`: port, API key and the other settings.
+- `sessions/<session>/events.jsonl` and `states/`: the journal of one game launch. With no client connected it only holds the start and stop records; while a client observes and acts, it records requests, receipts and major run events.
+- `sessions/<session>/screenshots/`: PNGs saved by `POST /v1/captures`, by `decision.capture: true`, and, only when `auto_capture` is on, at run start, elites, bosses, combat end and critical HP.
+
+`auto_capture` is `false` by default. Set it to `true` in `SpireLink.cfg` to sample the state continuously and save the automatic screenshots above, limited by `max_captures` per run. To clear the data, close the game and delete the `sessions` folder; deleting `SpireLink.cfg` generates a new API key on the next launch.
 
 ## Decisions, captures, events and timing
 

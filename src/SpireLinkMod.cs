@@ -17,12 +17,21 @@ public static partial class SpireLinkMod
     private static long _transformSeenAt = -100000;
     public const string Version = "0.3.0";
     public const string ModName = "SpireLink";
-    // The config and the next_run spec beside the DLL end in .cfg, not .json: the game's mod loader reads every .json under
-    // mods/ as a manifest and logs each one that has no id. Their content is JSON.
+    // The config and the next_run spec live in %LOCALAPPDATA%\SpireLink, not beside the DLL: a Steam Workshop update may
+    // replace or remove files in the mod folder, which would regenerate the api_key. They end in .cfg, not .json, so a copy
+    // left under mods/ is never read as a manifest. Their content is JSON.
     public const string ConfigFileName = ModName + ".cfg";
     public const string NextRunFileName = ModName + ".next_run.cfg";
-    private static string DefaultDataDirectory => Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), ModName);
+    // The LOCALAPPDATA variable comes first: GetFolderPath asks Windows for the known folder and ignores the variable, so a game
+    // launched with its own LOCALAPPDATA (an isolated test copy) would otherwise share the user's config and port.
+    internal static string ConfigDirectory => Path.Combine(
+        System.Environment.GetEnvironmentVariable("LOCALAPPDATA") is { Length: > 0 } local
+            ? local : System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData), ModName);
+    private static string DefaultDataDirectory => ConfigDirectory;
     public const int DefaultPort = 15528;
+    // Game versions this release was verified on. Any other version still loads, and /health reports untested_game_version.
+    private static readonly string[] TestedGameVersions = { "0.107.1" };
+    private static string? _gameVersion;
     private static readonly string SessionId = Guid.NewGuid().ToString("N");
     internal static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -69,7 +78,8 @@ public static partial class SpireLinkMod
         public int Port { get; set; } = DefaultPort;
         public string ApiKey { get; set; } = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
         public string DataDirectory { get; set; } = DefaultDataDirectory;
-        public bool AutoCapture { get; set; } = true;
+        // Off by default: with no client connected the mod samples nothing and saves no screenshots.
+        public bool AutoCapture { get; set; } = false;
         public int MaxCaptures { get; set; } = 100;
         public int ObserveIntervalMs { get; set; } = 250;
         public int SettleStableMs { get; set; } = 80;
@@ -101,9 +111,10 @@ public static partial class SpireLinkMod
     {
         try
         {
-            string directory = Path.GetDirectoryName(typeof(SpireLinkMod).Assembly.Location)!;
             _buildHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(typeof(SpireLinkMod).Assembly.Location))).ToLowerInvariant();
-            string configPath = Path.Combine(directory, ConfigFileName);
+            _gameVersion = ReadGameVersion();
+            Directory.CreateDirectory(ConfigDirectory);
+            string configPath = Path.Combine(ConfigDirectory, ConfigFileName);
             if (File.Exists(configPath))
                 _configuration = JsonSerializer.Deserialize<BridgeConfiguration>(File.ReadAllText(configPath), _jsonOptions)
                     ?? throw new InvalidDataException("Invalid config");
@@ -164,10 +175,17 @@ public static partial class SpireLinkMod
             _listener.Start();
             _ = Task.Run(ServerLoop);
             _journal.Record("bridge_started", new { version = Version, build_sha256 = _buildHash, port = _configuration.Port, time_scale = _configuration.TimeScale, non_interactive = _configuration.NonInteractive,
-                game_assembly_version = typeof(MegaCrit.Sts2.Core.Runs.RunManager).Assembly.GetName().Version?.ToString() });
+                game_assembly_version = typeof(MegaCrit.Sts2.Core.Runs.RunManager).Assembly.GetName().Version?.ToString(), game_version = _gameVersion });
             GD.Print($"[Spire Link] v{Version} listening on 127.0.0.1:{_configuration.Port}; API key is in {configPath}");
         }
         catch (Exception ex) { _lastError = ex.Message; GD.PrintErr($"[Spire Link] Initialize failed: {ex}"); }
+    }
+
+    // ReleaseInfo is read from the game's release_info.json; a failure only leaves the version unknown.
+    private static string? ReadGameVersion()
+    {
+        try { return MegaCrit.Sts2.Core.Debug.ReleaseInfoManager.Instance.ReleaseInfo?.Version; }
+        catch (Exception ex) { GD.PrintErr($"[Spire Link] Game version unavailable: {ex.Message}"); return null; }
     }
 
     private static void Shutdown()
@@ -314,7 +332,8 @@ public static partial class SpireLinkMod
                 await Respond(context.Response, 200, new { api_version = "1", bridge_version = Version, build_sha256 = _buildHash, session_id = SessionId,
                     status = "ok", state_version = Snapshots.Current?.Version, evidence_error = _journal?.LastError,
                     last_error = _lastError, control_revision = Interlocked.Read(ref _controlRevision),
-                    receipt_count = Requests.Count, receipt_capacity = _configuration.ReceiptCapacity });
+                    receipt_count = Requests.Count, receipt_capacity = _configuration.ReceiptCapacity,
+                    game_version = _gameVersion, tested_game_versions = TestedGameVersions, compatibility = GameVersionCheck.Compatibility(_gameVersion, TestedGameVersions) });
                 return;
             }
             if (!Authenticated(context.Request)) throw new ApiFailure(401, "unauthorized", "Bearer API key required");
@@ -508,7 +527,7 @@ public static partial class SpireLinkMod
                     diagnostics = true, recovery = "reconcile_only_no_force_unlock", ai_importance = "client_reported_optional_local_capture",
                     state_hash = "opaque_server_generated_sha256", legal_actions = "current_snapshot_candidates_rechecked_by_game",
                     captures = "local_game_viewport_png_not_sent_to_model", model_decision_time = "client_reported_only",
-                    unsupported = new[] { "multiplayer", "full_card_effect_simulation", "save_editing", "automatic_jev_decisions" },
+                    unsupported = new[] { "multiplayer", "full_card_effect_simulation", "save_editing" },
                     endpoints = new[] { "/v1/observe", "/v1/actions", "/v1/requests/{request_id}", "/v1/decisions", "/v1/captures", "/v1/metrics", "/v1/events", "/v1/knowledge/cards", "/v1/knowledge/keywords", "/v1/diagnostics", "/v1/recovery" } };
             else throw new ApiFailure(404, "not_found", "Unknown route or method");
             await Respond(context.Response, status, result, route);
