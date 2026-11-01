@@ -185,7 +185,9 @@ sealed class RecordingErrorWriter(bool blockFirstLine) : TextWriter
     private int _entered;
     private int _violations;
     private int _forbiddenThread = -1;
-    public List<string> Lines { get; } = new();
+    private readonly List<string> _lines = new();
+    // A snapshot taken under the writer's lock, so a reader never sees a half-published entry.
+    public IReadOnlyList<string> Lines { get { lock (_lines) return _lines.ToArray(); } }
     public int Entered => Volatile.Read(ref _entered);
     public int Violations => Volatile.Read(ref _violations);
     public int ForbiddenThread { set => Volatile.Write(ref _forbiddenThread, value); }
@@ -196,6 +198,6 @@ sealed class RecordingErrorWriter(bool blockFirstLine) : TextWriter
         if (Environment.CurrentManagedThreadId == Volatile.Read(ref _forbiddenThread)) Interlocked.Increment(ref _violations);
         Interlocked.Increment(ref _entered);
         _gate.Wait();
-        lock (Lines) Lines.Add(value ?? "");
+        lock (_lines) _lines.Add(value ?? "");
     }
 }
