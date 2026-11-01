@@ -25,17 +25,27 @@ public sealed class EvidenceJournal : IDisposable
     private readonly string _eventsPath;
     private readonly string _statesDirectory;
     private readonly Channel<JournalCommand> _commands;
+    // State versions queued but not yet written: a second SaveState for one of them is ignored. Once a version is on disk
+    // the file itself deflects a repeat, so the set only ever holds what is in flight (at most the queue capacity).
     private readonly ConcurrentDictionary<long, byte> _stateVersions = new();
     private readonly object _enqueueLock = new();
     private readonly Task _writerTask;
+    private readonly Task _errorLogTask;
+    private readonly SemaphoreSlim _errorSignal = new(0, 1);
+    private readonly CancellationTokenSource _stopErrorLog = new();
     private string? _lastError;
     private long _sequence;
     private long _dropped;
+    private long _errorsSinceLog;
     private int _disposed;
 
     // The writer queue is bounded: when the disk cannot keep up, new events and states are dropped and counted instead of
     // piling up in memory. Writes never block the game thread.
     public const int DefaultQueueCapacity = 4096;
+
+    // Errors (drops included) only set the last error and a counter on the reporting thread, which can be the game thread;
+    // a background task writes at most one summary line per interval to the error output.
+    public static readonly TimeSpan ErrorLogInterval = TimeSpan.FromSeconds(5);
 
     public EvidenceJournal(string rootDirectory, string sessionId, int queueCapacity = DefaultQueueCapacity)
         : this(rootDirectory, sessionId, queueCapacity, startWriter: true) { }
@@ -62,6 +72,7 @@ public sealed class EvidenceJournal : IDisposable
             FullMode = BoundedChannelFullMode.Wait // TryWrite returns false when full; nothing ever waits
         });
         _writerTask = startWriter ? Task.Run(WriterLoopAsync) : Task.CompletedTask;
+        _errorLogTask = Task.Run(ErrorLogLoopAsync);
     }
 
     public string SessionDirectory { get; }
@@ -71,10 +82,14 @@ public sealed class EvidenceJournal : IDisposable
     /// <summary>Events and states that were not queued because the writer queue was full.</summary>
     public long Dropped => Interlocked.Read(ref _dropped);
 
+    /// <summary>State versions queued and not yet written (tests of the bound).</summary>
+    internal int QueuedStateVersions => _stateVersions.Count;
+
     /// <summary>
     /// Deletes the oldest session folders under <paramref name="rootDirectory"/>/sessions so that at most <paramref name="keep"/>
-    /// remain (by last write time; the current session is never counted or deleted). Only folders named like a session folder
-    /// are touched. Returns the names of the deleted folders. <paramref name="keep"/> of 0 or less keeps everything.
+    /// remain in total, by last write time. The current session counts towards the quota and is never deleted, so with
+    /// <paramref name="keep"/> of 1 only the current session's folder stays. Only folders named like a session folder are touched.
+    /// Returns the names of the deleted folders. <paramref name="keep"/> of 0 or less keeps everything.
     /// </summary>
     public static IReadOnlyList<string> PruneSessions(string rootDirectory, int keep, string? currentSessionDirectory = null)
     {
@@ -86,7 +101,8 @@ public sealed class EvidenceJournal : IDisposable
         var candidates = new DirectoryInfo(sessions).GetDirectories()
             .Where(d => IsSessionDirectoryName(d.Name) && !string.Equals(d.FullName.TrimEnd(Path.DirectorySeparatorChar), current, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(d => d.LastWriteTimeUtc).ToList();
-        foreach (var old in candidates.Skip(keep))
+        int keepOthers = current == null ? keep : keep - 1;
+        foreach (var old in candidates.Skip(keepOthers))
         {
             try { old.Delete(recursive: true); deleted.Add(old.Name); }
             catch (Exception) { /* a folder in use stays; the next launch tries again */ }
@@ -211,6 +227,48 @@ public sealed class EvidenceJournal : IDisposable
         {
             ReportError($"Evidence journal flush failed: {exception.GetBaseException().Message}");
         }
+
+        // Stop the background logger and write whatever it has not summarized yet; nothing reports after this point.
+        try
+        {
+            _stopErrorLog.Cancel();
+            _errorLogTask.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch (Exception)
+        {
+            // The logger only writes to the error output; a failure there is not worth more than the final line below.
+        }
+        WriteErrorSummary();
+    }
+
+    private async Task ErrorLogLoopAsync()
+    {
+        while (true)
+        {
+            try { await _errorSignal.WaitAsync(_stopErrorLog.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+            WriteErrorSummary();
+            try { await Task.Delay(ErrorLogInterval, _stopErrorLog.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+
+    // One line for every error reported since the previous line: the last message and how many there were.
+    private void WriteErrorSummary()
+    {
+        var count = Interlocked.Exchange(ref _errorsSinceLog, 0);
+        if (count <= 0) return;
+        try
+        {
+            var message = LastError;
+            Console.Error.WriteLine(count == 1
+                ? $"[Spire Link evidence] {message}"
+                : $"[Spire Link evidence] {count} errors since the previous line; the last: {message}");
+        }
+        catch
+        {
+            // Evidence failures must never destabilize the game process.
+        }
     }
 
     private async Task WriterLoopAsync()
@@ -241,6 +299,7 @@ public sealed class EvidenceJournal : IDisposable
                             break;
                         case StateCommand stateCommand:
                             await WriteStateAsync(stateCommand).ConfigureAwait(false);
+                            _stateVersions.TryRemove(stateCommand.Version, out _); // on disk now; the file deflects a repeat
                             break;
                     }
                 }
@@ -320,17 +379,15 @@ public sealed class EvidenceJournal : IDisposable
 
     private string QueueState() => _commands.Reader.Completion.IsCompleted ? "the writer has stopped" : "the writer queue is full";
 
+    // Runs on whichever thread hit the error, the game thread included: it only stores the message, counts and wakes the
+    // logger. The error output is written by ErrorLogLoopAsync, rate limited.
     private void ReportError(string message)
     {
         Volatile.Write(ref _lastError, message);
-        try
-        {
-            Console.Error.WriteLine($"[Spire Link evidence] {message}");
-        }
-        catch
-        {
-            // Evidence failures must never destabilize the game process.
-        }
+        Interlocked.Increment(ref _errorsSinceLog);
+        try { _errorSignal.Release(); }
+        catch (SemaphoreFullException) { /* the logger is already awake */ }
+        catch (ObjectDisposedException) { }
     }
 
     private static string CreateSessionDirectoryName(string sessionId)

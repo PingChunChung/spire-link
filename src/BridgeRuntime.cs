@@ -151,23 +151,75 @@ public static class DataDirectoryPolicy
         string full;
         try { full = Path.GetFullPath(candidate); }
         catch (Exception ex) { return "data_directory is not a valid path: " + ex.Message; }
-        if (!string.IsNullOrEmpty(gameDirectory) && Under(full, Path.Combine(gameDirectory, "mods")))
+        // The written text and where it really leads (through junctions and symbolic links) are both checked, against the
+        // restricted folders as written and as they really are.
+        var paths = new[] { full, ResolveLinks(full) }.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (!string.IsNullOrEmpty(gameDirectory) && UnderAny(paths, Path.Combine(gameDirectory, "mods")))
             return "data_directory is inside the game's mods folder; the game would read the journal's .json files as mod manifests";
-        if (!string.IsNullOrEmpty(modDirectory) && Under(full, modDirectory))
+        if (!string.IsNullOrEmpty(modDirectory) && UnderAny(paths, modDirectory))
             return "data_directory is inside the mod's own folder; a Workshop update replaces that folder";
-        var parts = full.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        for (int i = 0; i + 2 < parts.Length; i++)
-            if (parts[i].Equals("steamapps", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("workshop", StringComparison.OrdinalIgnoreCase)
-                && parts[i + 2].Equals("content", StringComparison.OrdinalIgnoreCase))
-                return "data_directory is inside a Steam Workshop content folder";
+        foreach (var path in paths)
+        {
+            var parts = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            for (int i = 0; i + 2 < parts.Length; i++)
+                if (parts[i].Equals("steamapps", StringComparison.OrdinalIgnoreCase) && parts[i + 1].Equals("workshop", StringComparison.OrdinalIgnoreCase)
+                    && parts[i + 2].Equals("content", StringComparison.OrdinalIgnoreCase))
+                    return "data_directory is inside a Steam Workshop content folder";
+        }
         return null;
     }
 
-    private static bool Under(string full, string root)
+    /// <summary>
+    /// The full path with every existing directory on it that is a junction or a symbolic link replaced by its final target,
+    /// root first; the part that does not exist yet is appended unchanged. A path whose links cannot be read comes back as given.
+    /// </summary>
+    public static string ResolveLinks(string fullPath)
+    {
+        try
+        {
+            string full = Path.GetFullPath(fullPath);
+            // Split off the trailing components that do not exist yet; they cannot be links.
+            var missing = new Stack<string>();
+            string? existing = full;
+            while (existing != null && !Directory.Exists(existing))
+            {
+                var name = Path.GetFileName(existing);
+                if (name.Length == 0) return full;
+                missing.Push(name);
+                existing = Path.GetDirectoryName(existing);
+            }
+            if (existing == null) return full;
+            string? root = Path.GetPathRoot(existing);
+            if (string.IsNullOrEmpty(root)) return full;
+            string resolved = root;
+            foreach (var part in existing[root.Length..].Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            {
+                resolved = Path.Combine(resolved, part);
+                FileSystemInfo? target = null;
+                try { target = new DirectoryInfo(resolved).ResolveLinkTarget(returnFinalTarget: true); }
+                catch (Exception) { /* a cycle or an unreadable link: keep the path as written from here on */ }
+                if (target != null) resolved = Path.GetFullPath(target.FullName);
+            }
+            while (missing.Count > 0) resolved = Path.Combine(resolved, missing.Pop());
+            return Path.GetFullPath(resolved);
+        }
+        catch (Exception)
+        {
+            return fullPath;
+        }
+    }
+
+    private static bool UnderAny(string[] paths, string root)
     {
         string normalizedRoot;
         try { normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
         catch { return false; }
+        var roots = new[] { normalizedRoot, ResolveLinks(normalizedRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) };
+        return paths.Any(path => roots.Any(r => Under(path, r)));
+    }
+
+    private static bool Under(string full, string normalizedRoot)
+    {
         if (full.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)) return true;
         return full.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             || full.StartsWith(normalizedRoot + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);

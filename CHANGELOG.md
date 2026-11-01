@@ -14,8 +14,9 @@ First public release. Verified only on game v0.107.1, singleplayer only.
 - Event options carry `text_key` and events carry `dynamic_vars`, so costs and repeated options can be read in any game language.
 - Popup yes/no buttons carry a `role`; in a language the mod does not know, the action uses the role as its option id.
 - `non_interactive` modes share the same safety exclusions (merchant room, transform selection); an unsupported value falls back to `off`.
-- `data_directory` inside `mods/`, the mod folder or a Workshop content folder is rejected; the journal queue is bounded and drops are counted; `max_sessions` prunes old session folders.
-- `/health` no longer returns error text; the Release DLL carries no build-machine path.
+- `data_directory` inside `mods/`, the mod folder or a Workshop content folder is rejected, also when the path only reaches such a folder through a junction or symbolic link; the journal queue is bounded, drops are counted and logged as a rate-limited summary off the game thread; `max_sessions` prunes old session folders in the background, the current session counted in the quota.
+- `/health` no longer returns error text: `last_error` and `evidence_error` are `null` or a fixed code, with `has_last_error` / `has_evidence_error` beside them; the Release DLL carries no build-machine path.
+- Slippery Bridge: from the 8th Hold On on, the option keeps the same localization key; the completion check accepts that and still requires the cost and the HP loss to advance.
 - Settings and data live in `%LOCALAPPDATA%\SpireLink`, so Workshop updates keep the API key.
 - Automatic screenshots (`auto_capture`) are off by default.
 - `GET /health` reports the game version and `"compatibility": "untested_game_version"` on game versions this release was not verified on, if the mod starts there at all. The manifest declares `min_game_version` 0.107.1.

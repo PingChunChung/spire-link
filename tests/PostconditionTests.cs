@@ -151,7 +151,32 @@ static class PostconditionTests
         var loopStructuredAfter = Rewrite(Structured(after, 10, "SLIPPERY_BRIDGE.pages.HOLD_ON_6.options.HOLD_ON_LOOP", "x"), n => n["player"]!["hp"] = 45);
         Case(true, loopStructuredBefore, loopStructuredAfter, "structured LOOP step", versionAfter + 2, versionAfter + 3);
         Case(true, Rewrite(loopStructuredAfter, n => n["player"]!["hp"] = 50), Rewrite(Structured(after, 11, "SLIPPERY_BRIDGE.pages.HOLD_ON_LOOP.options.HOLD_ON_LOOP", "x"), n => n["player"]!["hp"] = 40),
-            "structured LOOP repeats with the same key", versionAfter + 4, versionAfter + 5);
+            "structured LOOP enters the LOOP page", versionAfter + 4, versionAfter + 5);
+        // From the 8th Hold On on, the option key is HOLD_ON_LOOP.options.HOLD_ON_LOOP before and after every further Hold On;
+        // the cost and the HP loss still have to advance.
+        const string loopKey = "SLIPPERY_BRIDGE.pages.HOLD_ON_LOOP.options.HOLD_ON_LOOP";
+        var ninthBefore = Rewrite(Structured(after, 11, loopKey, "x"), n => n["player"]!["hp"] = 40);
+        var ninthAfter = Rewrite(Structured(after, 12, loopKey, "x"), n => n["player"]!["hp"] = 29);
+        Case(true, ninthBefore, ninthAfter, "the 9th Hold On keeps the identical LOOP key", versionAfter + 6, versionAfter + 7);
+        Case(true, Rewrite(ninthAfter, n => n["player"]!["hp"] = 29), Rewrite(Structured(after, 13, loopKey, "x"), n => n["player"]!["hp"] = 17),
+            "the 10th Hold On keeps the identical LOOP key", versionAfter + 8, versionAfter + 9);
+        Case(false, ninthBefore, Rewrite(ninthAfter, n => n["player"]!["hp"] = 30), "identical LOOP key with the wrong HP loss", versionAfter + 6, versionAfter + 7);
+        Case(false, ninthBefore, Rewrite(Structured(after, 11, loopKey, "x"), n => n["player"]!["hp"] = 29), "identical LOOP key without the cost advancing", versionAfter + 6, versionAfter + 7);
+        Case(false, ninthBefore, ninthAfter, "identical LOOP key on an unchanged version", versionAfter + 6, versionAfter + 6);
+        Case(false, ninthBefore, Rewrite(ninthAfter, n => n["context"]!["run_id"] = "other"), "identical LOOP key in another run", versionAfter + 6, versionAfter + 7);
+        Case(false, ninthBefore, ninthAfter, "identical LOOP key while not ready", versionAfter + 6, versionAfter + 7, ready: false);
+        Case(false, ninthBefore, Rewrite(Structured(after, 12, "SLIPPERY_BRIDGE.pages.HOLD_ON_LOOP.options.HOLD_ON_8", "x"), n => n["player"]!["hp"] = 29),
+            "LOOP never goes back to a numbered option", versionAfter + 6, versionAfter + 7);
+        Case(false, Structured(after, 4, "SLIPPERY_BRIDGE.pages.HOLD_ON_0.options.HOLD_ON_1", "x"),
+            Rewrite(Structured(after, 5, "SLIPPERY_BRIDGE.pages.HOLD_ON_2.options.HOLD_ON_3", "x"), n => n["player"]!["hp"] = 50),
+            "a skipped page is not the next Hold On", versionAfter + 2, versionAfter + 3);
+        if (ActionPostconditions.SlipperyBridgeNextHoldOnKey("SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_0") != "SLIPPERY_BRIDGE.pages.HOLD_ON_0.options.HOLD_ON_1" ||
+            ActionPostconditions.SlipperyBridgeNextHoldOnKey("SLIPPERY_BRIDGE.pages.HOLD_ON_5.options.HOLD_ON_6") != "SLIPPERY_BRIDGE.pages.HOLD_ON_6.options.HOLD_ON_LOOP" ||
+            ActionPostconditions.SlipperyBridgeNextHoldOnKey("SLIPPERY_BRIDGE.pages.HOLD_ON_6.options.HOLD_ON_LOOP") != loopKey ||
+            ActionPostconditions.SlipperyBridgeNextHoldOnKey(loopKey) != loopKey ||
+            ActionPostconditions.SlipperyBridgeNextHoldOnKey("SLIPPERY_BRIDGE.pages.INITIAL.options.HOLD_ON_x") != null)
+            throw new Exception("Slippery Bridge next Hold On key derivation");
+        checks++;
         var chineseBefore = Rewrite(before, n => n["event"]!["options"]![1]!["description"] = "失去3点生命。重新随机上方选项中的卡牌。");
         var chineseAfter = Rewrite(after, n => n["event"]!["options"]![1]!["description"] = "失去4点生命。重新随机上方选项中的卡牌。");
         Case(true, chineseBefore, chineseAfter, "captured Chinese cost grammar (text fallback)");

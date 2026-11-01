@@ -57,6 +57,9 @@ public static partial class SpireLinkMod
     private static readonly HashSet<string> BlockedEvents = new();
     private static bool _wasLowHp;
     private static string? _lastError;
+    // What the unauthenticated /health shows in last_error and evidence_error while an error is recorded: a code, never the text.
+    internal const string HealthErrorCode = "error_recorded";
+    internal const string HealthEvidenceErrorCode = "evidence_error_recorded";
     private static string? _buildHash;
     private static string? _journalRunId;
     private static string _runObservationOrigin = "observed";
@@ -152,11 +155,7 @@ public static partial class SpireLinkMod
                 _configuration.DataDirectory = DefaultDataDirectory;
             }
             _journal = new EvidenceJournal(_configuration.DataDirectory, SessionId);
-            if (_configuration.MaxSessions > 0)
-            {
-                var pruned = EvidenceJournal.PruneSessions(_configuration.DataDirectory, _configuration.MaxSessions, _journal.SessionDirectory);
-                if (pruned.Count > 0) _journal.Record("sessions_pruned", new { kept = _configuration.MaxSessions, deleted = pruned });
-            }
+            if (_configuration.MaxSessions > 0) StartSessionPruning(_journal, _configuration.DataDirectory, _configuration.MaxSessions);
             InstallCardGridGuard();
             InstallPunchOffGuard();
             StartMainThreadWatchdog();
@@ -205,6 +204,25 @@ public static partial class SpireLinkMod
             GD.Print($"[Spire Link] v{Version} listening on 127.0.0.1:{_configuration.Port}; API key is in {configPath}");
         }
         catch (Exception ex) { _lastError = ex.Message; GD.PrintErr($"[Spire Link] Initialize failed: {ex}"); }
+    }
+
+    // max_sessions is applied in the background: listing and deleting old session folders on a slow disk must neither delay
+    // the game's load nor, when it fails, keep the API from starting. The outcome goes to the journal and to last_error.
+    private static void StartSessionPruning(EvidenceJournal journal, string dataDirectory, int keep)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var pruned = EvidenceJournal.PruneSessions(dataDirectory, keep, journal.SessionDirectory);
+                if (pruned.Count > 0) journal.Record("sessions_pruned", new { kept = keep, deleted = pruned });
+            }
+            catch (Exception ex)
+            {
+                _lastError = $"max_sessions pruning failed: {ex.Message}";
+                journal.Record("sessions_prune_failed", new { kept = keep, error_type = ex.GetType().Name, message = ex.Message });
+            }
+        });
     }
 
     // ReleaseInfo is read from the game's release_info.json; a failure only leaves the version unknown.
@@ -355,12 +373,18 @@ public static partial class SpireLinkMod
         {
             if (context.Request.HttpMethod == "GET" && route == "/health")
             {
-                // Unauthenticated: only flags, never the error text itself (it can contain local paths). /v1/diagnostics has the text.
-                await Respond(context.Response, 200, new { api_version = "1", bridge_version = Version, build_sha256 = _buildHash, session_id = SessionId,
-                    status = "ok", state_version = Snapshots.Current?.Version, has_evidence_error = _journal?.LastError != null,
-                    has_last_error = _lastError != null, control_revision = Interlocked.Read(ref _controlRevision),
-                    receipt_count = Requests.Count, receipt_capacity = _configuration.ReceiptCapacity,
-                    game_version = _gameVersion, tested_game_versions = TestedGameVersions, compatibility = GameVersionCheck.Compatibility(_gameVersion, TestedGameVersions) });
+                // Unauthenticated: never the error text itself (it can contain local paths). last_error and evidence_error keep
+                // their API v1 place, as an explicit null (a dictionary, so the null is not dropped) or a fixed code; /v1/diagnostics has the text.
+                string? lastError = _lastError, evidenceError = _journal?.LastError;
+                await Respond(context.Response, 200, new Dictionary<string, object?>
+                {
+                    ["api_version"] = "1", ["bridge_version"] = Version, ["build_sha256"] = _buildHash, ["session_id"] = SessionId,
+                    ["status"] = "ok", ["state_version"] = Snapshots.Current?.Version,
+                    ["last_error"] = lastError == null ? null : HealthErrorCode, ["evidence_error"] = evidenceError == null ? null : HealthEvidenceErrorCode,
+                    ["has_last_error"] = lastError != null, ["has_evidence_error"] = evidenceError != null, ["control_revision"] = Interlocked.Read(ref _controlRevision),
+                    ["receipt_count"] = Requests.Count, ["receipt_capacity"] = _configuration.ReceiptCapacity,
+                    ["game_version"] = _gameVersion, ["tested_game_versions"] = TestedGameVersions, ["compatibility"] = GameVersionCheck.Compatibility(_gameVersion, TestedGameVersions)
+                });
                 return;
             }
             if (!Authenticated(context.Request)) throw new ApiFailure(401, "unauthorized", "Bearer API key required");

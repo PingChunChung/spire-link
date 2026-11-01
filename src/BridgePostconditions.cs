@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -313,14 +314,38 @@ public static class ActionPostconditions
         // the option's displayed sentence is only the fallback for a state that carries neither.
         if (SlipperyBridgeCost(oldEvent, oldHold) is not int cost || cost < 1 || cost == int.MaxValue ||
             SlipperyBridgeCost(newEvent, newHold) is not int nextCost || nextCost != cost + 1) return false;
-        if (String(oldHold, "text_key") is { Length: > 0 } oldKey && String(newHold, "text_key") is { Length: > 0 } newKey &&
-            (!SlipperyBridgeHoldOnKey(oldKey) || !SlipperyBridgeHoldOnKey(newKey) || oldKey == newKey)) return false;
+        if (String(oldHold, "text_key") is { Length: > 0 } oldKey && String(newHold, "text_key") is { Length: > 0 } newKey)
+        {
+            if (!SlipperyBridgeHoldOnKey(oldKey) || !SlipperyBridgeHoldOnKey(newKey)) return false;
+            // Each Hold On moves to the page named after the option just taken. From the 8th Hold On on, the page and the
+            // option are both LOOP, so the key legitimately stays the same; any other repeated key means the page did not advance.
+            if (SlipperyBridgeNextHoldOnKey(oldKey) is { } expected ? newKey != expected
+                : oldKey == newKey && oldKey != SlipperyBridgeLoopKey) return false;
+        }
         return Number(Part(b, "player"), "hp") is int oldHp && oldHp >= cost && Number(Part(a, "player"), "hp") == oldHp - cost;
     }
 
     // "SLIPPERY_BRIDGE.pages.<page>.options.HOLD_ON_<n or LOOP>": each Hold On gets the key of its page; LOOP repeats from 7 on.
     private static bool SlipperyBridgeHoldOnKey(string key) =>
         key.StartsWith("SLIPPERY_BRIDGE.pages.", StringComparison.Ordinal) && key.Contains(".options.HOLD_ON_", StringComparison.Ordinal);
+
+    private const string SlipperyBridgeLoopKey = "SLIPPERY_BRIDGE.pages.HOLD_ON_LOOP.options.HOLD_ON_LOOP";
+
+    // The key the game gives the next Hold On option after the option with this key was taken (SlipperyBridge.HoldOn:
+    // page HOLD_ON_<suffix of the taken option>, option HOLD_ON_<next suffix>, where the suffix is LOOP from the 7th Hold On on).
+    // Null for a key whose option suffix is not a number or LOOP; the caller then only rejects an unchanged non-LOOP key.
+    internal static string? SlipperyBridgeNextHoldOnKey(string key)
+    {
+        const string marker = ".options.HOLD_ON_";
+        int at = key.IndexOf(marker, StringComparison.Ordinal);
+        if (at < 0) return null;
+        string suffix = key[(at + marker.Length)..];
+        string next;
+        if (suffix == "LOOP") next = "LOOP";
+        else if (int.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n >= 0) next = n + 1 >= 7 ? "LOOP" : (n + 1).ToString(CultureInfo.InvariantCulture);
+        else return null;
+        return $"SLIPPERY_BRIDGE.pages.HOLD_ON_{suffix}.options.HOLD_ON_{next}";
+    }
 
     private static int? SlipperyBridgeCost(JsonElement eventState, JsonElement hold)
     {

@@ -91,6 +91,42 @@ Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "steamapps", "
 Check(DataDirectoryPolicy.Reject(Path.Combine(game, "modsdata"), game, mod) == null, "a sibling whose name starts with mods is allowed");
 Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "SpireLink"), game, mod) == null, "the default location is allowed");
 Check(DataDirectoryPolicy.Reject(Path.Combine(Path.GetTempPath(), "SpireLink"), null, null) == null, "unknown game and mod folders reject nothing but Workshop paths");
+// A path is checked by where it really leads: a junction (or symbolic link) into a restricted folder is rejected, whether the
+// link is on the data_directory side or on the restricted folder's side. The part of the path that does not exist yet is kept.
+string linkRoot = Path.Combine(Path.GetTempPath(), $"sts2-links-{Guid.NewGuid():N}");
+try
+{
+    string realGame = Path.Combine(linkRoot, "game"), realMods = Path.Combine(realGame, "mods"), realMod = Path.Combine(realMods, "SpireLink");
+    Directory.CreateDirectory(realMod);
+    string link = Path.Combine(linkRoot, "link");
+    bool junction = false;
+    if (OperatingSystem.IsWindows())
+    {
+        using var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{realMods}\"")
+            { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true });
+        mklink!.WaitForExit();
+        junction = mklink.ExitCode == 0 && Directory.Exists(link);
+    }
+    if (junction)
+    {
+        Check(string.Equals(DataDirectoryPolicy.ResolveLinks(Path.Combine(link, "data", "x")), Path.Combine(realMods, "data", "x"), StringComparison.OrdinalIgnoreCase),
+            "a junction resolves to its target and the missing tail is kept");
+        Check(string.Equals(DataDirectoryPolicy.ResolveLinks(Path.Combine(realMods, "SpireLink")), realMod, StringComparison.OrdinalIgnoreCase), "a real path resolves to itself");
+        Check(DataDirectoryPolicy.Reject(Path.Combine(link, "data"), realGame, realMod) != null, "a junction into mods/ is rejected");
+        Check(DataDirectoryPolicy.Reject(Path.Combine(link, "SpireLink", "data"), realGame, realMod) != null, "a junction into the mod folder is rejected");
+        Check(DataDirectoryPolicy.Reject(Path.Combine(realMod, "data"), Path.Combine(linkRoot, "elsewhere"), Path.Combine(link, "SpireLink")) != null,
+            "a real path under a mod folder that is given through a junction is rejected");
+        Check(DataDirectoryPolicy.Reject(Path.Combine(linkRoot, "data"), realGame, realMod) == null, "a sibling of the junction is allowed");
+        Directory.Delete(link);
+    }
+    else Console.WriteLine("Runtime tests: skipped the junction check (a junction could not be created here).");
+    Check(string.Equals(DataDirectoryPolicy.ResolveLinks(Path.Combine(linkRoot, "absent", "deeper")), Path.Combine(linkRoot, "absent", "deeper"), StringComparison.OrdinalIgnoreCase),
+        "a path that does not exist yet resolves to itself");
+}
+finally
+{
+    if (Directory.Exists(linkRoot)) Directory.Delete(linkRoot, recursive: true);
+}
 Check(GameVersionCheck.Compatibility("v0.107.1", new[] { "0.107.1" }) == "tested", "The game's v-prefixed version matches a tested version");
 Check(GameVersionCheck.Compatibility("v0.111.0", new[] { "0.107.1" }) == "untested_game_version", "A newer game version is reported as untested");
 Check(GameVersionCheck.Compatibility(null, new[] { "0.107.1" }) == "unknown_game_version", "A missing game version is never reported as tested");
