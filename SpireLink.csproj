@@ -13,6 +13,8 @@
     <Deterministic>true</Deterministic>
     <PathMap>$(MSBuildProjectDirectory)=/_/</PathMap>
     <DebugType>embedded</DebugType>
+    <!-- With a git remote the SDK writes Source Link JSON into the PDB, and its keys are unmapped local paths. -->
+    <EnableSourceLink>false</EnableSourceLink>
     <STS2GameDir Condition="'$(STS2GameDir)' == ''">$(STS2_GAME_DIR)</STS2GameDir>
     <STS2GameDataDir Condition="'$(STS2GameDataDir)' == ''">$(STS2GameDir)/data_sts2_windows_x86_64</STS2GameDataDir>
   </PropertyGroup>
