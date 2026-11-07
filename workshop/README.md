@@ -6,7 +6,7 @@ This folder is the workspace for Mega Crit's [sts2-mod-uploader](https://github.
 |---|---|
 | `workshop.json` | Title, BBCode description, change note, tag `Tools & APIs`. `visibility` starts as `private`. |
 | `content/` | Not tracked. `./build.ps1 -Workshop` fills it with the release files (DLL, `SpireLink.json`, LICENSE, README, `api.md`). |
-| `image.png` | Missing; you must add it. Required by the uploader, must be a PNG under 1 MB. `./build.ps1 -Workshop` fails until it exists and is small enough. Do not use Mega Crit's logo or official art. |
+| `image.png` | Cover image, required by the uploader. Must be a PNG under 1 MB; `./build.ps1 -Workshop` fails when it is missing or too large. Do not use Mega Crit's logo or official art. |
 | `previews/` | Optional. Each image under 1 MB. If the folder is absent, existing previews on Steam stay unchanged. |
 | `mod_id.txt` | Written by the first upload. Commit it, so later uploads update the same Workshop item. |
 
