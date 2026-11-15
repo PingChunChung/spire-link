@@ -4,6 +4,10 @@ Spire Link is a local mod for Slay the Spire 2. It runs an HTTP API inside the g
 
 The current version is 0.3.0, verified only on game v0.107.1, singleplayer only. On another game version the mod may fail to load or to read some screens; if it starts, `GET /health` reports `"compatibility": "untested_game_version"`. The maintainer's verification record for this version: a complete Ascension 10 win recorded through this API (1110 actions, through both final bosses) was replayed in the real game on v0.107.1 with the maintainer's replay tool, every action executed as recorded, and the final floor and HP matched the original run. The recording and the tool are not part of this repository.
 
+![GET /v1/observe returns the game state as JSON](docs/images/link_01_observe.jpg)
+
+![POST /v1/actions plays a card and returns a receipt](docs/images/link_02_action.jpg)
+
 ## Install (players)
 
 Install it one way only: subscribe on the Steam Workshop, or download `SpireLink-<version>.zip` from Releases and put the `SpireLink` folder inside it into the game's `mods` folder, so that you end up with `Slay the Spire 2/mods/SpireLink/SpireLink.dll`. Start the game and allow mods to load when it asks.
